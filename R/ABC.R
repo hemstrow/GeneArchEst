@@ -350,6 +350,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
 #' @param num_accepted numeric, either the proportion of runs to accept or the number of runs to accept.
 #' @param parameters character, the parameter names for which to draw values.
 gen_parms <- function(x, res, num_accepted, parameters, grid = 2000, dist.var = "ks.D"){
+
   if(length(parameters) != 2){
     stop("Only two parameters accepted at the moment.\n")
   }
