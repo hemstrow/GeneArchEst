@@ -2,15 +2,10 @@
 
 # functions to find and compare peaks
 findpeaks <- function(x, delta, pcut = .005, pvals = T){
-  peakdet <- function(v, delta, x = NULL){
+  peakdet <- function(v, delta, x){
     # from: https://gist.github.com/dgromer/ea5929435b8b8c728193
     maxtab <- NULL
     mintab <- NULL
-
-    if (is.null(x))
-    {
-      x <- seq_along(v)
-    }
 
     if (length(v) != length(x))
     {
@@ -82,12 +77,15 @@ findpeaks <- function(x, delta, pcut = .005, pvals = T){
 
   if(pvals){
     lpcut <- -log10(pcut)
-    peaks <- x[x$logp >= lpcut,]
-    xs <- smooth(-log10(peaks$PVAL))
+    x$effect <- -log10(x$effect)
+    peaks <- x[x$effect >= lpcut,]
+    peaks <- na.omit(peaks)
+    xs <- smooth(peaks$effect)
     peaks$slogp <- as.numeric(xs)
   }
   else{
     peaks <- x[x$effect >= pcut[1] | x$effect <= pcut[2],]
+    peaks <- na.omit(peaks)
     xs <- smooth(abs(peaks$effect))
     peaks$seffect <- as.numeric(xs)
   }
@@ -96,6 +94,7 @@ findpeaks <- function(x, delta, pcut = .005, pvals = T){
 }
 
 # wrapper for findpeaks to find across multiple chromosomes
+#' @export
 findpeaks_multi <- function(x, delta, pcut, chr = "chr", pvals = T){
   ug <- unique(x[,chr])
   lout <- vector("list", length(ug))

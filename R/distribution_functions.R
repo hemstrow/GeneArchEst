@@ -15,6 +15,8 @@
 #'   distribution
 #' @param scale numeric. Scale/shape parameter for the scaled-inverse
 #'   chi-squared distribution.
+#'
+#' @export
 rbayesB <- function(n, pi, d.f, scale){
   effects <- rbinom(n, 1, 1 - pi) # these are non-zero
   #effects[effects != 0] <- LaplacesDemon::rinvchisq(sum(effects), d.f, scale) # inverse chi distribution alternative

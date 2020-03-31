@@ -1,3 +1,4 @@
+#' @export
 process_ms <- function(x, chr.length){
   infile <- x #infile
   lines <- readLines(x)
@@ -45,6 +46,7 @@ process_ms <- function(x, chr.length){
 
 
 # wrapper for gs() with no shift in surival and assuming real effect sizes (no model). x needs to contain phenotypes and meta with effects
+#' @export
 init_pop <- function(x,
                      init_gens,
                      growth.function,
@@ -94,6 +96,7 @@ init_pop <- function(x,
 
 
 #=======function to do a single generation of random mating===========
+#' @export
 rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, facet = "group"){
   if(!data.table::is.data.table(x)){
     x <- data.table::as.data.table(x)
@@ -261,6 +264,7 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, 
 # h: heritability estimate
 # h.av: historic genetic varaince, for prediction from effect sizes.
 # effect.sizes: marker effect sizes, for prediction from effect sizes.
+#' @export
 pred.BV.from.model <- function(pred.model, g, pred.method = NULL, model.source = NULL, h = NULL, h.av = "fgen", effect.sizes = NULL){
   if(pred.method == "effects"){
     pheno <- get.pheno.vals(g, effect.sizes, h, hist.a.var = h.av)
@@ -311,6 +315,7 @@ src <- '
   }
   return Rcpp::wrap(sumR);'
 
+#' @export
 weighted.colSums <- inline::cxxfunction(
   signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
 
@@ -333,10 +338,10 @@ e.dist.func <- function(A1, hist.a.var, h, standardize = F){
 }
 
 #get phenotypic values given genotypes, effect sizes, and heritabilities. If hist.a.var is true, uses the amount of genomic variability this gen and h to figure out how big of an env effect to add. Otherwise uses the provided value (probably that in the first generation).
+#' @export
 get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize = FALSE){
   #get effect of each individual:
   a <- weighted.colSums(as.matrix(x), effect.sizes) # faster than t(x)%*%effect.sizes!
-
   a.ind <- a[seq(1, length(a), by = 2)] + a[seq(2, length(a), by = 2)] #add across both gene copies.
 
   #standardize the genetic variance if requested.

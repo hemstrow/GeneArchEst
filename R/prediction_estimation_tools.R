@@ -15,6 +15,7 @@
 #                a numeric value other than zero will fudge the variance number by up to the proportion given (1 fudges up to 100%).
 #    pass.var: NULL or numeric >= 0. Like pass.resid, but for the true genetic variance.
 #    standardize: Boolean. Should the addative genetic values be centered and scaled between -1 and 1 prior to entry into JWAS? Phenotypic values still won't be centered!
+#' @export
 pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  prediction.program = "JWAS",
                  chain_length = 100000,

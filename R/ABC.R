@@ -27,6 +27,8 @@
 #' @param ABC_scheme character, default "A". The ABC_scheme to use. See details.
 #' @param par numeric or FALSE, default FALSE. If numeric, the number of cores on which to run the ABC.
 #' @param run_number numeric, default NULL. Controls how the itermediate output directories are named. If numeric, will be named for the number, otherwise, will be named for the iteration.
+#'
+#' @export
 ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) rbeta(x, 25, 1),
                                    df_func = NULL,  scale_func = NULL, h = NULL,
                                    julia.path = "julia", chain_length = 100000,
@@ -289,27 +291,11 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     progress <- function(n) cat(sprintf("Chunk %d out of", n), par, "is complete.\n")
     opts <- list(progress=progress)
 
+
+
     output <- foreach::foreach(i = 1:par, .inorder = FALSE,
-                               .options.snow = opts,
-                               .export = c("rbayesB", "get.pheno.vals", "e.dist.func", "pred",
-                                           "convert_2_to_1_column", "calc_dist_stats",
-                                           "cucconi.stat", "lepage.stat"), .packages = c("data.table", "inline"),
-                               .noexport = "weighted.colSums") %dopar% {
-
-                                 # remake the weighted.colSums function...
-                                 src <- '
-                                  Rcpp::NumericMatrix dataR(data);
-                                  Rcpp::NumericVector weightsR(weights);
-                                  int ncol = dataR.ncol();
-                                  Rcpp::NumericVector sumR(ncol);
-                                  for (int col = 0; col<ncol; col++){
-                                  sumR[col] = Rcpp::sum(dataR( _, col)*weightsR);
-                                  }
-                                  return Rcpp::wrap(sumR);'
-
-                                 weighted.colSums <- inline::cxxfunction(
-                                   signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
-
+                               .options.snow = opts, .packages = c("data.table", "GeneArchEst")
+                               ) %dopar% {
 
                                  out <- chunks[[i]]
                                  if(save_effects){
@@ -379,6 +365,7 @@ gen_parms <- function(x, res, num_accepted, parameters, grid = 10000, dist.var =
   res$hits <- ifelse(res[,dist.var] <= quantile(res[,dist.var], qcut), 1, 0)
 
   # generate kernal
+  browser()
   op <- GenKern::KernSur(res[res$hits == 1,which(colnames(res) == parameters[1])],
                          res[res$hits == 1,which(colnames(res) == parameters[2])],
                          range.x = c(min(res[,which(colnames(res) == parameters[1])]),

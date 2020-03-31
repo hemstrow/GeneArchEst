@@ -1,5 +1,6 @@
 #=======function to do growth and selection=======
 # note: init means are we simply intiating a population under selection. We'll need to keep all markers if so.
+#' @export
 gs <- function(x,
                gens,
                growth.function,

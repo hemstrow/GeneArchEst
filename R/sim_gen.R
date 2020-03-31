@@ -1,11 +1,11 @@
-sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
-                    df_func = NULL,  scale_func = NULL, h_func = NULL,
+#' @export
+sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 25, 1),
+                    df_func = NULL,  scale_func = NULL, h_func = NULL, scheme = "gwas",
                     method = "BayesB",
                     burnin = burnin, thin = thin, chain_length = chain_length,
                     par = F, save_effects = T,
                     joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks.D",
-                    peak_delta = .5, peak_pcut = 0.0005){
-
+                    peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, run_number = NULL){
 
   #============general subfunctions=========================
   generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL){
@@ -17,7 +17,7 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
   }
 
   #============schem functions for one simulation=============
-  gp <- function(x, pi, df, scale, method, t_iter, h){
+  gp <- function(x, pi, df, scale, method, t_iter, h, windows){
     pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
 
     cat("Beginning pseudo data", method, "run.\n")
@@ -26,33 +26,32 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
                        prediction.program = "BGLR", prediction.model = method,
                        runID = paste0(t_iter, "_pseudo"), verbose = F)
 
-    stats <- get_dist_stats(pseudo.pred)
+    stats <- dist_desc(pseudo.pred, meta, windows, peak_delta, peak_pcut, chr, pvals = F)
 
     return(list(stats = stats, e = pseudo$e))
   }
-  gwas <- function(x, pi, df, scale, method, t_iter, G, h){
+  gwas <- function(x, pi, df, scale, method, t_iter, G, h, windows){
     pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
-
     pseudo_pi <- pred(x, phenotypes = pseudo$p,
                       prediction.program = "GMMAT",
                       maf.filt = F, runID = paste0(t_iter, "gmmat_pseudo"),
                       pass_G = G)$e.eff$PVAL
 
-    stats <- get_dist_stats(pseudo_pi)
+    stats <- dist_desc(pseudo_pi, meta, windows, peak_delta, peak_pcut, chr, pvals = T)
     return(list(stats = stats, e = pseudo$e))
   }
 
-  loop_func <- function(x, pi, df, scale, method, scheme, t_iter, G = NULL, h){
+  loop_func <- function(x, pi, df, scale, method, scheme, t_iter, G = NULL, h, windows){
     if(scheme == "gp"){
-      dist <- gp(x, pi, df, scale, method, t_iter, h)
+      dist <- gp(x, pi, df, scale, method, t_iter, h, windows)
     }
     else if(scheme == "gwas"){
-      dist <- gwas(x, pi, df, scale, method, t_iter, G = G, h = h)
+      dist <- gwas(x, pi, df, scale, method, t_iter, G = G, h = h, windows)
     }
     return(dist)
   }
 
-  #============ABC loop======================================
+  #============prep for simulations======================================
   # get the random values to run
   joint_params <- character()
   if(!is.null(df_func)){
@@ -100,7 +99,7 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
   }
   run_hs <- h_func(iters)
 
-
+  browser()
   # if any joint parameter priors, calculate and disambiguate
   if(length(joint_params) > 0){
     joint_params <- gen_parms(iters, joint_res, joint_acceptance, joint_params, dist.var = joint_res_dist)
@@ -110,12 +109,8 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
     }
   }
 
-
-  # initialize storage
-  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, h = run_hs, matrix(NA, nrow(run_dfs), GeneArchEst::number_descriptive_stats))
-
   # can pass a g matrix forward once if doing gwas
-  if(scheme == "pi"){
+  if(scheme == "gwas"){
     ind.genos <- convert_2_to_1_column(x)
     colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
@@ -127,6 +122,14 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
   else{
     G <- NULL
   }
+
+  # pre-run the window function
+  windows <- mark_windows(meta, window_sigma, chr)
+
+
+  #============run the simulations===========================
+  # initialize storage
+  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, h = run_hs, matrix(NA, length(run_dfs), GeneArchEst::number_descriptive_stats))
 
 
   # run the ABC
@@ -143,15 +146,18 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
       else{rn <- i}
 
       tout <- loop_func(x = x, pi = out[i,"pi"], df = out[i,"df"], scale = out[i,"scale"],
-                        method = method, scheme = scheme, t_iter = rn, G = G, h = out[i,"h"])
+                        method = method, scheme = scheme, t_iter = rn, G = G, h = out[i,"h"], windows = windows)
 
-      out[i, 4:ncol(out)] <- tout$dist
+      out[i, 5:ncol(out)] <- tout$stats
+      if(i == 1){
+        colnames(out)[5:ncol(out)] <- names(tout$stats)
+      }
 
       if(save_effects){
         data.table::set(out.effects, j = i,  value = tout$e)
       }
     }
-    colnames(out)[4:ncol(out)] <- names(tout$dist)
+    colnames(out)[5:ncol(out)] <- names(tout$dist)
   }
 
 
@@ -175,19 +181,11 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
                                            "cucconi.stat", "lepage.stat"), .packages = c("data.table", "inline"),
                                .noexport = "weighted.colSums") %dopar% {
 
-                                 # remake the weighted.colSums function...
-                                 src <- '
-                                  Rcpp::NumericMatrix dataR(data);
-                                  Rcpp::NumericVector weightsR(weights);
-                                  int ncol = dataR.ncol();
-                                  Rcpp::NumericVector sumR(ncol);
-                                  for (int col = 0; col<ncol; col++){
-                                  sumR[col] = Rcpp::sum(dataR( _, col)*weightsR);
-                                  }
-                                  return Rcpp::wrap(sumR);'
-
-                                 weighted.colSums <- inline::cxxfunction(
-                                   signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
+                                 # remake the weighted.colSums function, since the inline part doesn't work in packages
+                                 # and writing the same code as a .cpp is actually much slower
+                                 weighted.colSums <- function(data, weights){
+                                   return(crossprod(t(data), weights))
+                                 }
 
 
                                  out <- chunks[[i]]
@@ -199,15 +197,16 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
                                  for(j in 1:nrow(out)){
                                    if(is.numeric(run_number)){rn <- run_number}
                                    else{rn <- j}
-                                   tout <- loop_func(x, phenotypes, out[j,"pi"], out[j,"df"], out[j,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff, real_pi_dist = real_pi_dist, G = G)
-                                   out[j, 4:ncol(out)] <- tout$dist
+                                   tout <- loop_func(x = x, pi = out[j,"pi"], df = out[j,"df"], scale = out[j,"scale"],
+                                                     method = method, scheme = scheme, t_iter = rn, G = G, h = out[j,"h"], windows = windows)
+                                   out[j, 5:ncol(out)] <- tout$stats
                                    if(save_effects){
                                      data.table::set(out.effects, j = j,  value = tout$e)
                                    }
                                  }
-                                 colnames(out)[4:ncol(out)] <- names(tout$dist)
+                                 colnames(out)[5:ncol(out)] <- names(tout$stats)
                                  if(save_effects){
-                                   out <- list(dists = out, effects = out.effects)
+                                   out <- list(stats = out, effects = out.effects)
                                  }
                                  out
                                }
@@ -229,9 +228,9 @@ sim_gen <- function(x, iters, pi_func = function(x) rbeta(x, 25, 1),
   }
 
   if(save_effects){
-    return(list(dists = out, effects = out.effects))
+    return(list(stats = out, effects = out.effects))
   }
   else{
-    return(list(dists = out))
+    return(list(stats = out))
   }
 }

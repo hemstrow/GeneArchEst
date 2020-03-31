@@ -1,3 +1,4 @@
+#' @export
 plot_sim_res <- function(dists, sims, acceptance_ratio = 0.01, viridis.option = "B",
                          real.sims = FALSE, real.alpha = 0.06, smooth = T, log_dist = T){
   # note accepted runs
