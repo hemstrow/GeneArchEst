@@ -317,7 +317,7 @@ src <- '
 
 #' @export
 weighted.colSums <- function(data, weights){
-  return(crossprod(t(data), weights))
+  return(crossprod(data, weights))
 }
 # weighted.colSums <- inline::cxxfunction(
 #   signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
