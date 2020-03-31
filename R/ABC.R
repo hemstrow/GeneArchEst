@@ -349,7 +349,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
 #' @param res data.frame, the results of an ABC run, must include a "dist" column.
 #' @param num_accepted numeric, either the proportion of runs to accept or the number of runs to accept.
 #' @param parameters character, the parameter names for which to draw values.
-gen_parms <- function(x, res, num_accepted, parameters, grid = 10000, dist.var = "ks.D"){
+gen_parms <- function(x, res, num_accepted, parameters, grid = 5000, dist.var = "ks.D"){
   if(length(parameters) != 2){
     stop("Only two parameters accepted at the moment.\n")
   }
