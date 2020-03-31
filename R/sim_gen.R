@@ -128,7 +128,7 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
 
   #============run the simulations===========================
   # initialize storage
-  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, h = run_hs, matrix(NA, length(run_dfs), GeneArchEst::number_descriptive_stats))
+  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, h = run_hs, matrix(NA, length(run_dfs), number_descriptive_stats))
 
 
   # run the ABC
