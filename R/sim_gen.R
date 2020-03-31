@@ -99,7 +99,6 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
   }
   run_hs <- h_func(iters)
 
-  browser()
   # if any joint parameter priors, calculate and disambiguate
   if(length(joint_params) > 0){
     joint_params <- gen_parms(iters, joint_res, joint_acceptance, joint_params, dist.var = joint_res_dist)

@@ -365,7 +365,6 @@ gen_parms <- function(x, res, num_accepted, parameters, grid = 10000, dist.var =
   res$hits <- ifelse(res[,dist.var] <= quantile(res[,dist.var], qcut), 1, 0)
 
   # generate kernal
-  browser()
   op <- GenKern::KernSur(res[res$hits == 1,which(colnames(res) == parameters[1])],
                          res[res$hits == 1,which(colnames(res) == parameters[2])],
                          range.x = c(min(res[,which(colnames(res) == parameters[1])]),
