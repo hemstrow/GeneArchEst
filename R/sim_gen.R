@@ -148,15 +148,12 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
                         method = method, scheme = scheme, t_iter = rn, G = G, h = out[i,"h"], windows = windows)
 
       out[i, 5:ncol(out)] <- tout$stats
-      if(i == 1){
-        colnames(out)[5:ncol(out)] <- names(tout$stats)
-      }
 
       if(save_effects){
         data.table::set(out.effects, j = i,  value = tout$e)
       }
     }
-    colnames(out)[5:ncol(out)] <- names(tout$dist)
+    colnames(out)[5:ncol(out)] <- names(tout$stats)
   }
 
 
