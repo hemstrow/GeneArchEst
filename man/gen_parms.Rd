@@ -4,7 +4,7 @@
 \alias{gen_parms}
 \title{Draw parameter values from the posteriour distribution of an ABC using a density kernal}
 \usage{
-gen_parms(x, res, num_accepted, parameters, grid = 10000, dist.var = "ks.D")
+gen_parms(x, res, num_accepted, parameters, grid = 2000, dist.var = "ks.D")
 }
 \arguments{
 \item{x}{numeric, the number of values to draw.}
