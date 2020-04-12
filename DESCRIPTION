@@ -19,12 +19,14 @@ Depends:
 Imports:
     AGHmatrix,
     BGLR,
+    compiler,
     doSNOW,
     dplyr,
     e1071,
     ggplot2,
     GMMAT,
     inline,
+    mgcv,
     ranger,
     Rcpp
 LinkingTo: 
