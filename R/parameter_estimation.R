@@ -153,7 +153,7 @@ estimate_gen_arch_from_sims <- function(x, meta, phenos, sims, ABC_res, p = .25,
                                        Y.train = dat_train$pi, n.cores = num.threads)
 
   # get the distribution of possible pi values around the point estimate.
-  quantiles <- seq(0 + .0001, 1 - .0001, by = .0001)
+  quantiles <- seq(0 + .001, 1 - .001, by = .001)
   qs <- pe2$qerror(quantiles, 1) # quantiles for errors from 0.0001 to 0.9999 (. 1% to 99.99%)
   ed <- data.frame(q = as.numeric(qs), val = quantiles)
   ed$q <- ed$q + pe2$estimates$pred[1]
@@ -173,6 +173,38 @@ estimate_gen_arch_from_sims <- function(x, meta, phenos, sims, ABC_res, p = .25,
                                    scale_back_transform = ABC_scale_back_transform)
 
   browser()
+  cat("Done!\n")
+  #===========clean, plot, and return====================
+  cat("Cleaning and preparing summary plot...\n")
+  # get the probs for the quantiles
+  probs <- quantiles
+  probs[probs > 0.5] <- 1 - probs[probs > 0.5]
+
+  # add pi data and melt the scale data
+  scale$scale_quantiles$pi <- ed$pi
+  scale$scale_quantiles$pi_quantile <- ed$prob
+  qm <- reshape2::melt(scale$scale_quantiles, id.vars = c("pi", "pi_quantile"))
+  colnames(qm)[3:4] <- c("scale_quantile", "scale")
+
+  # fix scale quantiles, get joint quantile, and plot
+  qm$scale_quantile <- probs[match(qm$scale_quantile, quantiles)]
+  qm$joint_quantile <- qm$pi_quantile * qm$scale_quantile
+  qm$norm_joint_quantile <- qm$joint_quantile/sum(qm$joint_quantile)
+  ## prepareconfidence limits for geom_polygon
+  scale_upper_95 <- scale$scale_quantiles[,"0.975"]
+  scale_lower_95 <- scale$scale_quantiles[,"0.025"]
+  scale_cis <- data.frame(pi = scale$scale_quantiles$pi, upper = scale_upper_95, lower = scale_lower_95)
+  path <- scale_cis[which(scale_cis$pi %in% ed$pi[which(quantiles >= 0.025 & quantiles <= 0.975)]),]
+  path <- reshape2::melt(path, id.vars = "pi")
+  colnames(path)[3] <- "scale"
+  path$order <- 1:nrow(path)
+  path <- path[c(which(path$variable == "lower"), rev(path$order[path$variable == "upper"])),]
+  path$norm_joint_quantile <- NA
+  ## plot
+  tp <- ggplot2::ggplot(data = qm, ggplot2::aes(x = pi, y = scale, z = norm_joint_quantile)) + ggplot2::stat_summary_hex(bins = 1000) +
+    ggplot2::scale_fill_viridis_c() + ggplot2::scale_color_viridis_c() + ggplot2::theme_bw() +
+    ggplot2::geom_polygon(data = path, ggplot2::aes(x = pi, y = scale), color = "red", fill = NA, size = 1.2)
+
   #==========return======================
   return(list(forest = rf, cross_validation = pe, pi_point = pe2$estimates[1,], pi_density = ed,
               descriptive_stats = stats))

@@ -111,3 +111,37 @@ dist_desc <- function(p, meta, windows, delta, pcut = .005, chr = "chr", pvals =
 
   return(c(dist_stats, peak_stats, window_stats))
 }
+
+
+
+compare_distributions <- function(o, p){
+  # descriptive for p
+  quantsp <- quantile(p, probs = seq(0.1, 0.9, length.out = 20))
+  names(quantsp) <- paste0("Quantile_", names(quantsp))
+  out_desc_p <- c(kurtosis = e1071::kurtosis(p),
+                  skewness = e1071::skewness(p),
+                  mean = mean(p), median = median(p), sd = sd(p), var = var(p),
+                  quantsp)
+  names(out_desc_p) <- paste0("sim_", names(out_desc_p))
+
+  # descriptive for o
+  quantso <- quantile(o, probs = seq(0.1, 0.9, length.out = 20))
+  names(quantso) <- paste0("Quantile_", names(quantso))
+  out_desc_o <- c(kurtosis = e1071::kurtosis(o),
+                  skewness = e1071::skewness(o),
+                  mean = mean(o), median = median(o), sd = sd(o), var = var(o),
+                  quantso)
+  names(out_desc_o) <- paste0("observed_", names(out_desc_o))
+
+
+  # comparative
+  capture.output(invisible((lepage <- nonpar::lepage.test(p, o))))
+  capture.output(invisible(cucconi <- nonpar::cucconi.test(p, o, "permutation")))
+  suppressMessages(out_dist <- c(ks = unlist(ks.test(p, o)$statistic),
+                                 norm.ks = tryCatch(ks.test(p/sum(p), o/sum(o))$statistic, error=function(err) NA),
+                                 lepage.p = lepage$p.value, lepage.s = lepage$obs.stat,
+                                 cucconi.p = cucconi$p.value, cucconi.s = cucconi$C))
+  out <- c(abs(out_desc_o - out_desc_p), out_dist)
+  names(out) <- names_diff_stats
+  return(out)
+}

@@ -27,6 +27,7 @@ Imports:
     GMMAT,
     inline,
     mgcv,
+    nonpar,
     ranger,
     Rcpp
 LinkingTo: 

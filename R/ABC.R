@@ -29,7 +29,7 @@
 #' @param run_number numeric, default NULL. Controls how the itermediate output directories are named. If numeric, will be named for the number, otherwise, will be named for the iteration.
 #'
 #' @export
-ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) rbeta(x, 25, 1),
+ABC_on_hyperparameters <- function(x, phenotypes, iters, center = T, pi_func = function(x) rbeta(x, 25, 1),
                                    df_func = NULL,  scale_func = NULL, h = NULL,
                                    julia.path = "julia", chain_length = 100000,
                                    burnin = 5000,
@@ -37,7 +37,6 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                    par = F, run_number = NULL, est_h = F, save_effects = T,
                                    joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks.D",
                                    delta = .5, pcut = 0.0005){
-
 
   # ks <- which(matrixStats::rowSums2(x)/ncol(x) >= 0.05)
   #============general subfunctions=========================
@@ -47,15 +46,18 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   }
   euclid.distribution.dist <- function(o, p){
     if(sum(p) == 0){
-      return(c(dist, rep(NA, 30)))
+      return(rep(NA, number_diff_stats))
     }
-    dist <- calc_dist_stats(o, p)
+    dist <- compare_distributions(o, p)
     return(dist)
   }
-  generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL){
+  generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL, center = T){
     if(method == "BayesB"){
       pseudo_effects <- rbayesB(nrow(x), pi, df, scale)
       pseudo_phenos <- get.pheno.vals(x, pseudo_effects, h)$p
+      if(center){
+        pseudo_phenos <- pseudo_phenos - mean(pseudo_phenos)
+      }
     }
     return(list(e = pseudo_effects, p = pseudo_phenos))
   }
@@ -69,8 +71,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     dist <- euclid.dist(phenotypes, p$est.phenos)
     return(dist)
   }
-  scheme_B <- function(x, phenotypes, pi, df, scale, method, t_iter){
-    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+  scheme_B <- function(x, phenotypes, pi, df, scale, method, t_iter, center = center){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h, center = center)
 
     p <- pred(x, phenotypes = pseudo$p,
               burnin = burnin, thin = thin, chain_length = chain_length,
@@ -81,8 +83,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     dist <- euclid.distribution.dist(phenotypes, p.phenos)
     return(return(list(dist = dist, e = pseudo$e)))
   }
-  scheme_C <- function(x, phenotypes, r.p.eff, pi, df, scale, method, t_iter){
-    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+  scheme_C <- function(x, phenotypes, r.p.eff, pi, df, scale, method, t_iter, center = center){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h, center = center)
 
     cat("Beginning pseudo data", method, "run.\n")
     pseudo.pred <-pred(x, phenotypes = pseudo$p,
@@ -107,13 +109,13 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     return(list(dist = c(dist, dist.peaks), e = pseudo$e))
 
   }
-  scheme_D <- function(x, phenotypes, pi, df, scale, method){
-    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+  scheme_D <- function(x, phenotypes, pi, df, scale, method, center = center){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h, center = center)
     dist <- euclid.distribution.dist(phenotypes, pseudo$p)
     return(list(dist = dist, e = pseudo$e))
   }
-  scheme_E <- function(x, phenotypes, real_pi_dist, pi, df, scale, method, t_iter, G){
-    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+  scheme_E <- function(x, phenotypes, real_pi_dist, pi, df, scale, method, t_iter, G, center = center){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h, center = center)
 
     pseudo_pi <- pred(x, phenotypes = pseudo$p,
                       prediction.program = "GMMAT",
@@ -130,26 +132,32 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     return(list(dist = c(dist, dist.peaks), e = pseudo$e))
   }
 
-  loop_func <- function(x, phenotypes, pi, df, scale, method, scheme, t_iter, r.p.phenos = NULL, r.p.eff = NULL, real_pi_dist = NULL, G = NULL){
+  loop_func <- function(x, phenotypes, pi, df, scale, method, scheme, t_iter, r.p.phenos = NULL, r.p.eff = NULL, real_pi_dist = NULL, G = NULL, center = center){
     if(scheme == "A"){
       dist <- scheme_A(x, phenotypes, pi, method, t_iter)
     }
     else if(scheme == "B"){
-      dist <- scheme_B(x, phenotypes, pi, df, scale, method, t_iter)
+      dist <- scheme_B(x, phenotypes, pi, df, scale, method, t_iter, center = center)
     }
     else if(scheme == "C"){
-      dist <- scheme_C(x, phenotypes, r.p.eff, pi, df, scale, method, t_iter)
+      dist <- scheme_C(x, phenotypes, r.p.eff, pi, df, scale, method, t_iter, center = center)
     }
     else if(scheme == "D"){
-      dist <- scheme_D(x, phenotypes, pi, df, scale, method)
+      dist <- scheme_D(x, phenotypes, pi, df, scale, method, center = center)
     }
     else if(scheme == "E"){
-      dist <- scheme_E(x, phenotypes, real_pi_dist, pi, df, scale, method, t_iter, G = G)
+      dist <- scheme_E(x, phenotypes, real_pi_dist, pi, df, scale, method, t_iter, G = G, center = center)
     }
     return(dist)
   }
 
-  #============ABC loop======================================
+  #============initialization======================================
+  # center the distribution if requested
+  if(center){
+    phenotypes <- phenotypes - mean(phenotypes)
+  }
+
+
   # get the random values to run
   joint_params <- character()
   if(!is.null(df_func)){
@@ -206,12 +214,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
 
 
   # initialize storage
-  if(scheme %in% c("C", "E")){
-    out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 65))
-  }
-  else{
-    out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 32))
-  }
+  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = number_diff_stats))
+  colnames(out)[-c(1:3)] <- names_diff_stats
 
   # if doing a method where prediction needs to be run on the real data ONCE, or if h should be estimated, do that now:
   if(ABC_scheme == "C" | est_h == T){
@@ -255,7 +259,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     G <- NULL
   }
 
-
+  #============ABC loop===================
   # run the ABC
   ## serial
   if(par == F){
@@ -268,7 +272,9 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
       cat("Iter: ", i, ".\n")
       if(is.numeric(run_number)){rn <- run_number}
       else{rn <- i}
-      tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff, real_pi_dist = real_pi_dist, G = G)
+      tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method,
+                        ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff,
+                        real_pi_dist = real_pi_dist, G = G, center = center)
       out[i, 4:ncol(out)] <- tout$dist
       if(save_effects){
         data.table::set(out.effects, j = i,  value = tout$e)
@@ -293,7 +299,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
 
 
 
-    output <- foreach::foreach(i = 1:par, .inorder = FALSE,
+    output <- foreach::foreach(i = 1:par, .inorder = FALSE, .errorhandling = "pass",
                                .options.snow = opts, .packages = c("data.table", "GeneArchEst")
                                ) %dopar% {
 
@@ -306,7 +312,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                  for(j in 1:nrow(out)){
                                    if(is.numeric(run_number)){rn <- run_number}
                                    else{rn <- j}
-                                   tout <- loop_func(x, phenotypes, out[j,"pi"], out[j,"df"], out[j,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff, real_pi_dist = real_pi_dist, G = G)
+                                   tout <- loop_func(x, phenotypes, out[j,"pi"], out[j,"df"], out[j,"scale"], method, ABC_scheme, t_iter = rn,
+                                                     r.p.phenos = r.p.phenos, r.p.eff = r.p.eff, real_pi_dist = real_pi_dist, G = G, center = center)
                                    out[j, 4:ncol(out)] <- tout$dist
                                    if(save_effects){
                                      data.table::set(out.effects, j = j,  value = tout$e)
@@ -318,7 +325,6 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                  }
                                  out
                                }
-
 
     # release cores and clean up
     parallel::stopCluster(cl)

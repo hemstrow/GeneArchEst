@@ -1,6 +1,6 @@
 #' @export
 sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 25, 1),
-                    df_func = NULL,  scale_func = NULL, h_func = NULL, scheme = "gwas",
+                    df_func = NULL,  scale_func = NULL, h_func = NULL, center = T, scheme = "gwas",
                     method = "BayesB",
                     burnin = burnin, thin = thin, chain_length = chain_length,
                     par = F, save_effects = T,
@@ -8,17 +8,21 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, run_number = NULL){
 
   #============general subfunctions=========================
-  generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL){
+  generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL, center = T){
     if(method == "BayesB"){
+
       pseudo_effects <- rbayesB(nrow(x), pi, df, scale)
       pseudo_phenos <- get.pheno.vals(x, pseudo_effects, h)$p
+      if(center){
+        pseudo_phenos <- pseudo_phenos - mean(pseudo_phenos)
+      }
     }
     return(list(e = pseudo_effects, p = pseudo_phenos))
   }
 
   #============schem functions for one simulation=============
-  gp <- function(x, pi, df, scale, method, t_iter, h, windows){
-    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+  gp <- function(x, pi, df, scale, method, t_iter, h, windows, center = center){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h, center = center)
 
     cat("Beginning pseudo data", method, "run.\n")
     pseudo.pred <-pred(x, phenotypes = pseudo$p,
@@ -30,8 +34,8 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
 
     return(list(stats = stats, e = pseudo$e))
   }
-  gwas <- function(x, pi, df, scale, method, t_iter, G, h, windows){
-    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+  gwas <- function(x, pi, df, scale, method, t_iter, G, h, windows, center = center){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h, center = center)
     pseudo_pi <- pred(x, phenotypes = pseudo$p,
                       prediction.program = "GMMAT",
                       maf.filt = F, runID = paste0(t_iter, "gmmat_pseudo"),
@@ -41,12 +45,12 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
     return(list(stats = stats, e = pseudo$e))
   }
 
-  loop_func <- function(x, pi, df, scale, method, scheme, t_iter, G = NULL, h, windows){
+  loop_func <- function(x, pi, df, scale, method, scheme, t_iter, G = NULL, h, windows, center = center){
     if(scheme == "gp"){
-      dist <- gp(x, pi, df, scale, method, t_iter, h, windows)
+      dist <- gp(x, pi, df, scale, method, t_iter, h, windows, center = center)
     }
     else if(scheme == "gwas"){
-      dist <- gwas(x, pi, df, scale, method, t_iter, G = G, h = h, windows)
+      dist <- gwas(x, pi, df, scale, method, t_iter, G = G, h = h, windows, center = center)
     }
     return(dist)
   }
@@ -145,7 +149,8 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
       else{rn <- i}
 
       tout <- loop_func(x = x, pi = out[i,"pi"], df = out[i,"df"], scale = out[i,"scale"],
-                        method = method, scheme = scheme, t_iter = rn, G = G, h = out[i,"h"], windows = windows)
+                        method = method, scheme = scheme, t_iter = rn, G = G, h = out[i,"h"],
+                        windows = windows, center = center)
 
       out[i, 5:ncol(out)] <- tout$stats
 
@@ -194,7 +199,8 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
                                    if(is.numeric(run_number)){rn <- run_number}
                                    else{rn <- j}
                                    tout <- loop_func(x = x, pi = out[j,"pi"], df = out[j,"df"], scale = out[j,"scale"],
-                                                     method = method, scheme = scheme, t_iter = rn, G = G, h = out[j,"h"], windows = windows)
+                                                     method = method, scheme = scheme, t_iter = rn, G = G, h = out[j,"h"],
+                                                     windows = windows, center = center)
                                    out[j, 5:ncol(out)] <- tout$stats
                                    if(save_effects){
                                      data.table::set(out.effects, j = j,  value = tout$e)
