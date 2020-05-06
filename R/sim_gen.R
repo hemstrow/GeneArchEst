@@ -4,7 +4,7 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
                     method = "BayesB",
                     burnin = burnin, thin = thin, chain_length = chain_length,
                     par = F, save_effects = T,
-                    joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks.D",
+                    joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, run_number = NULL){
 
   #============general subfunctions=========================
