@@ -15,6 +15,7 @@
 #                a numeric value other than zero will fudge the variance number by up to the proportion given (1 fudges up to 100%).
 #    pass.var: NULL or numeric >= 0. Like pass.resid, but for the true genetic variance.
 #    standardize: Boolean. Should the addative genetic values be centered and scaled between -1 and 1 prior to entry into JWAS? Phenotypic values still won't be centered!
+#    center: Boolean. Should the phenotypes be centered only?
 #' @export
 pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  prediction.program = "JWAS",
@@ -29,6 +30,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  mtry = 1,
                  h = NULL,
                  standardize = FALSE,
+                 center = FALSE,
                  save.meta = TRUE, par = NULL, pi = NULL, pass_G = NULL, verbose = T){
   #============sanity checks================================
   # check that all of the required arguments are provided for the prediction.model we are running
@@ -171,9 +173,12 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
 
   #============prepare directories and phenotypes=========
   if(!is.null(phenotypes)){
-    # if standardization is requested, set the mean phenoytpes to o and var(pheno) to 1
+    # if standardization is requested, set the var(pheno) to 1
     if(standardize){
       phenotypes <- phenotypes/sd(phenotypes)
+    }
+    # centering, set mean to 0
+    if(center | standardize){
       phenotypes <- phenotypes - mean(phenotypes)
     }
     r.ind.effects <- list(p = phenotypes) # backup the ind effects.
@@ -258,16 +263,16 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   if(prediction.program == "JWAS"){
     cat("Calling JWAS.\n")
     options(scipen = 999)
-    julia.call <- paste0(julia.path, " ", owd, "/analysis.jl ", chain_length, " ", burnin)
+    julia.call <- paste0(julia.path, " ", getwd(), "/analysis.jl ", chain_length, " ", burnin)
     # add the residual and genetic variance if requested.
-    if(!is.null(pass.resid)){
+    if(pass.resid != FALSE){
       rv <- var(r.ind.effects$p - r.ind.effects$a)
       rv <- rv + rv*runif(1, 0, pass.resid) #fudge according to factor provided
     }
     else{
       rv <- 1
     }
-    if(!is.null(pass.var)){
+    if(pass.var != FALSE){
       gv <- var(r.ind.effects$a)
       gv <- gv + gv*runif(1, 0, pass.var) #fudge according to factor provided
     }
@@ -281,6 +286,10 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     else{
       julia.call <- paste0(julia.call, " ", "false")
     }
+
+    # save the julia script
+    browser()
+    writeLines(analysis.jl, "analysis.jl")
     system(julia.call)
 
     #=========grab output and modify it to give the estimated effect size per locus=============

@@ -1,4 +1,4 @@
-calc_distribution_stats <- function(x, meta, phenos, scheme = "gwas", chr = "chr",
+calc_distribution_stats <- function(x, meta, phenos, center = T, scheme = "gwas", chr = "chr",
                                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
                                     burnin = NULL, thin = NULL, chain_length = NULL){
   #===========functions to run gwas or gp=============
@@ -23,6 +23,10 @@ calc_distribution_stats <- function(x, meta, phenos, scheme = "gwas", chr = "chr
   }
 
   #=============get windows and run=========
+  if(center){
+    phenos <- phenos - mean(phenos)
+  }
+
   windows <- mark_windows(meta, window_sigma, chr)
 
   if(scheme == "gwas"){
@@ -42,8 +46,7 @@ calc_distribution_stats <- function(x, meta, phenos, scheme = "gwas", chr = "chr
 #' Estimate pi from distribution descriptions from simulated effect size distributions
 #' using a random forest.
 #'
-#' @param x numeric. Descriptive statistics for the estimated effect sizes/associaion p-values
-#'   from the observed data.
+#' @param x numeric matrix. Genotypes
 #' @param sims data.frame. Data.frame that matches that produced by \code{\link{sim_gen}}, containing descriptive statistics for the estimated effect sizes/associaion p-values
 #'   from the simulted data as well as a column named 'pi' containing the simulated pi values. Each row should be a single
 #'   simulation. May contain other columns titled 'df', 'scale', and 'h'.
@@ -60,8 +63,9 @@ calc_distribution_stats <- function(x, meta, phenos, scheme = "gwas", chr = "chr
 #'
 #' @author William Hemstrom
 #' @export
-estimate_gen_arch_from_sims <- function(x, meta, phenos, sims, ABC_res, p = .25, num.trees = 1000, mtry = ncol(sims) - 1, num.threads = NULL,
-                                        pi_transform = function(pi) log10(1 - pi), pi_back_transform = function(pi) 1 - 10^(pi),
+estimate_gen_arch_from_sims <- function(x, meta, phenos, sims, ABC_res, center = T, p = .25, num.trees = 1000, mtry = ncol(sims) - 1, num.threads = NULL,
+                                        pi_transform = function(pi) log10(1 - pi),
+                                        pi_back_transform = function(pi) 1 - 10^(pi),
                                         importance = "none",scheme = "gwas", chr = "chr",
                                         peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
                                         burnin = NULL, thin = NULL, chain_length = NULL,
@@ -69,9 +73,31 @@ estimate_gen_arch_from_sims <- function(x, meta, phenos, sims, ABC_res, p = .25,
                                         ABC_scale_transform = function(scale) log10(scale),
                                         ABC_scale_back_transform = function(scale) 10^scale, ...){
 
+  #===========sanity checks========================
+  msg <- character()
+  # sim data
+  ## colnames
+  sim_cols <- colnames(sims)
+  meta_sim_cols <- which(colnames(sims) %in% c("pi", "scale", "df", "h"))
+  # no pi data
+  if(!"pi" %in% colnames(sims)){
+    msg <- c(msg, "pi values not found in simulated data.")
+  }
+  # unexpected columns
+  if(length(meta_sim_cols) + number_descriptive_stats != ncol(sims)){
+    bad.cols <- which(!colnames(sims) %in% names_descriptive_stats)
+    bad.cols <- bad.cols[-which(bad.cols %in% meta_sim_cols)]
+    msg <- c(msg, paste0("Some unexpected colnames in sims: ", paste0(colnames(sims)[bad.cols], collapse = ", "), "."))
+  }
+
+  if(length(msg) > 0){
+    stop(paste0(msg, collapse = "\n"))
+  }
+
+
   #===========get stats for the real data==========
   cat("Getting descriptive statistics for the real data...\n")
-  stats <- calc_distribution_stats(x, meta, phenos, scheme, chr,
+  stats <- calc_distribution_stats(x, meta, phenos, center, scheme, chr,
                                    peak_delta, peak_pcut, window_sigma,
                                    burnin, thin, chain_length)
   cat("Done!\n")
@@ -128,7 +154,6 @@ estimate_gen_arch_from_sims <- function(x, meta, phenos, sims, ABC_res, p = .25,
                                       X.test = dat_test,
                                       Y.train = dat_train$pi, n.cores = ifelse(is.null(num.threads), 1, num.threads))
 
-
   # add in real data and calculate errors
   pe$estimates$real <- pi_test
   pe$estimates$in_error <- ifelse(pe$estimates$real <= pe$estimates$upper_0.05 & pe$estimates$real >= pe$estimates$lower_0.05, 1, 0)
@@ -172,7 +197,6 @@ estimate_gen_arch_from_sims <- function(x, meta, phenos, sims, ABC_res, p = .25,
                                    dist_var = ABC_dist_var, quantiles = quantiles, scale_transform = ABC_scale_transform,
                                    scale_back_transform = ABC_scale_back_transform)
 
-  browser()
   cat("Done!\n")
   #===========clean, plot, and return====================
   cat("Cleaning and preparing summary plot...\n")
@@ -206,8 +230,20 @@ estimate_gen_arch_from_sims <- function(x, meta, phenos, sims, ABC_res, p = .25,
     ggplot2::geom_polygon(data = path, ggplot2::aes(x = pi, y = scale), color = "red", fill = NA, size = 1.2)
 
   #==========return======================
-  return(list(forest = rf, cross_validation = pe, pi_point = pe2$estimates[1,], pi_density = ed,
-              descriptive_stats = stats))
+  if(is.function(pi_back_transform)){
+    point_est <- pi_back_transform(pe2$estimates[1,])
+    point_est_fix <- point_est[c(1,2,3,5,4)]
+    point_est_fix$mspe <- abs(point_est_fix$mspe)
+    names(point_est_fix) <- names(point_est)
+    point_est <- point_est_fix
+  }
+  else{
+    point_est <- pi_back_transform(pe2$estimates[1,])
+  }
+
+  return(list(forest = rf, cross_validation = pe, pi_point = point_est, pi_density = ed,
+              descriptive_stats = stats,
+              pi_cross_val_plot = cv.plot, scale_bounds_plot = scale$fit_plot, bounds_plot = tp))
 }
 
 
@@ -227,7 +263,7 @@ estimate_scale_from_ABC <- function(x, pi, pi_transform = function(pi) log10(1 -
                                     quantiles = seq(0 + .0001, 1 - .0001, by = .0001), scale_transform = function(scale) log10(scale),
                                     scale_back_transform = function(scale) 10^scale){
   #==================grab the accepted runs============
-  hits <- which(x[,dist_var] <= quantile(x[,dist_var], threshold))
+  hits <- which(x[,dist_var] <= quantile(x[,dist_var], threshold, na.rm = T))
 
   #==================transform and esitmate===========
   # transform
