@@ -371,3 +371,147 @@ convert_2_to_1_column <- function(x){
   ind.genos <- matrix(ind.genos, nrow = ncol(x)/2, byrow = T) # rematrix and transpose!
   return(ind.genos)
 }
+
+#' Make bed files from genotype/phenotype data
+#'
+#' From input genotypes, metadata, and phenotypes, creates a bed, ped, map, and bim file
+#' for use in PLINK, GCTA, or other programs. Files of each type will be written to the current
+#' working directory with the "data" prefix. Note that file named "data.sh" will be written which
+#' must be ran via bash command line to produce the .bed binary file.
+#'
+#' @param x matrix or object coercable to a matrix. Genotypes, in phased format (two columns per individual).
+#'   Genotypes should be in single number format (0 or 1), such as produced by \code{\link[process_ms]}.
+#' @param meta data.frame of object coercable to data.frame. Metadata for snp data, where column 1 is the chromsome
+#'   and column 2 is the position on the chromosome in bp,such as produced by \code{\link[process_ms]}.
+#' @param phenos character vector. A vector containing the phenotypes for each individual,
+#'   sorted identically to individuals in x.
+#' @param return_objects logical, default FALSE, If TRUE, returns a list with ped, bed, map, and bim data. Otherwise just saves
+#'   files.
+#'
+#' @return Either NULL or a list containing ped, bed, map, and bim formatted data.
+#'
+#' @author William Hemstrom
+#'
+#' @references Source code pulled from the snpR package by the same author for use here.
+#'
+#' @export
+make_bed <- function(x, meta, phenos, plink_path = "/usr/bin/plink.exe", return_objects = F){
+
+  # get allele names for map file down the line
+  a.names <- matrix(c(1,2), nrow(x), 2, T)
+
+  #===============make a fam file=================
+  cat("Straightening sheets (making ped and fam)... ")
+  ped <- data.frame(fam = 1,
+                    ind = paste0("Ind_", 1:(ncol(x)/2)),
+                    PatID = 0,
+                    MatID = 0,
+                    Sex = 0,
+                    Phenotype = phenos)
+
+  # save .fam
+  fam <- ped
+
+  # change missing data value and add a space between alleles.
+  x <- x + 1
+  x.np <- paste0(x[,seq(1,ncol(x), by = 2)], " ", x[,seq(2,ncol(x), by = 2)])
+  x.np <- matrix(x.np, nrow = ncol(x)/2, byrow = T)
+
+  # rebind
+  ped <- cbind(as.data.table(ped), as.data.table(x.np), stringsAsFactors = F)
+
+  # clean
+  rm(x.np)
+  gc()
+  cat("All settled!\n\n")
+
+  #===============make an extended map file=================
+  # without morgans
+  bim <- data.frame(chr = meta[,1],
+                    rs = 1:nrow(meta),
+                    mr = 0,
+                    bp = meta[,2],
+                    a1 = a.names[,1],
+                    a2 = a.names[,2])
+
+  # recode chr
+  bim$chr <- as.numeric(as.factor(bim$chr))
+
+  # grab normal map file
+  map <- bim[,1:4]
+
+  #============save files============
+  cat("Fluffing pillows (saving plain text map, fam, ped, and bim files)... ")
+  # save easy files
+  data.table::fwrite(map, "data.map", quote = F, col.names = F, sep = " ", row.names = F, na = NA)
+  data.table::fwrite(fam, "data.fam", quote = F, col.names = F, sep = " ", row.names = F, na = NA)
+  data.table::fwrite(ped, "data.ped", quote = F, col.names = F, sep = " ", row.names = F, na = NA)
+  data.table::fwrite(bim, "data.bim", quote = F, col.names = F, sep = " ", row.names = F, na = NA)
+
+  cat("Smells like fresh shampoo!\n\n")
+
+  # use plink to make a .bed file. Too much of a pain in the butt to write binary with R.
+  cat("Smoothing out wrinkles (using PLINK to make a .bed file)...\n\n")
+  system(paste0(plink_path, " --file data --make-bed --out data --allow-no-sex"))
+  cat("All done! Looks nice and cozy.\n\n")
+
+  # name output
+  if(return_objects){
+    if(file.exists("data.bed")){cat(".bed succesfully made.\n\n")}
+    else{cat("No .bed file located. Time to go to a mattress store. Check log for plink errors.\n\n")}
+    return(list(ped = ped, map = map, bim = bim, fam = fam))
+  }
+  else{
+    if(file.exists("data.bed")){cat(".bed succesfully made.\n");return(TRUE)}
+    else{cat("No .bed file located. Check log for plink errors.\n");return(FALSE)}
+  }
+}
+
+estim_h <- function(x, meta,
+                    num_threads = 1, autosome_num = length(unique(meta[,1])), maf = 0.01,
+                    gcta_path = "/usr/bin/gcta.exe", plink_path = "/usr/bin/plink.exe",
+                    phenos = NULL,
+                    gcta_extra_arg_make_grm = NULL,
+                    gcta_extra_arg_est_h = NULL){
+  #===========sanity checks=========
+  if(!all(c(file.exists("data.bed"), file.exists("data.map"), file.exists("data.bim")))){
+    if(is.null(phenos)){
+      stop("Phenos must be provided if no .bed, .map, and .bim files exist.")
+    }
+    cat("Making .bed...\n\n")
+    make_bed(x, meta, phenos, plink_path = plink_path)
+  }
+
+  #===========construct call=======
+  call <- paste0(gcta_path, " --bfile data --autosome --autosome-num ", autosome_num, " --maf ", maf,
+                 " --make-grm --out data --thread-num ", num_threads)
+  if(!is.null(gcta_extra_arg_make_grm)){
+    call <- paste0(call, " ", gcta_extra_arg_make_grm)
+  }
+
+  #===========call gcta to make a grm============
+  cat("Calling gcta to make a grm...\n\n")
+  system(call)
+
+  #===========call gcta to estimate heritability===========
+  # make a .phen file
+  cat("Making a .phen file...\n\n")
+  data.table::fwrite(
+    data.table::fread("data.fam")[j = c(1, 2, 6)],
+    file = "data.phen",
+    sep = " ")
+
+
+  call2 <- paste0(gcta_path,
+                  " --grm data --pheno data.phen --reml --out data --thread-num ",
+                  num_threads)
+  if(!is.null(gcta_extra_arg_est_h)){
+    call2 <- paste0(call2, " ", gcta_extra_arg_est_h)
+  }
+
+  system(call2)
+
+  #==========parse========================================
+  res <- readr::read_delim("data.hsq", delim = "\t")
+  return(list(res = res, call_make_grm = call, call_est_h = call2))
+}
