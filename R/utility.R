@@ -1,5 +1,5 @@
 #' @export
-process_ms <- function(x, chr.length){
+process_ms <- function(x, chr.length, fix_overlaps = T){
   infile <- x #infile
   lines <- readLines(x)
   lines <- lines[-which(lines == "")] #remove empty entries
@@ -39,6 +39,10 @@ process_ms <- function(x, chr.length){
 
   colnames(meta) <- c("group", "position")
   colnames(x) <- paste0("gc_", 1:ncol(x))
+
+  if(fix_overlaps){
+    meta <- offset_overlapping_positions(meta)
+  }
 
   return(list(x = x, meta = meta))
 }
@@ -514,4 +518,72 @@ estim_h <- function(x, meta,
   #==========parse========================================
   res <- readr::read_delim("data.hsq", delim = "\t")
   return(list(res = res, call_make_grm = call, call_est_h = call2))
+}
+
+offset_overlapping_positions <- function(meta){
+  meta[,2] <- round(meta[,2])
+  meta$ord <- 1:nrow(meta)
+
+  # function that checks for duplicates, returns dups, sorted meta, and pos_id
+  dup_check <- function(meta){
+    pos_id <- paste0(meta[,1], "_", meta[,2])
+    meta <- meta[order(pos_id),]
+    pos_id <- sort(pos_id)
+    dups <- duplicated(pos_id) | rev(duplicated(rev(pos_id)))
+    return(list(dups = dups, meta = meta, pos_id = pos_id))
+  }
+
+  # function that takes a dup check result and adjusts any duplicate sites
+  adjust_pos <- function(dc){
+    # unpack dc
+    meta <- dc$meta
+    dups <- dc$dups
+    pos_id <- dc$pos_id
+
+    # get a dup count table
+    tab <- table(pos_id[dups])
+
+    # make a new vector of positions for each duplicate site and overwrite
+    ## prepare vectors
+    cent <- ceiling(tab/2)
+    current_pos <- meta[match(names(tab), pos_id), 2]
+    lower <- current_pos - (cent - 1)
+    upper <- ifelse(tab %% 2 == 0, current_pos + cent, current_pos + cent - 1)
+    vec <- apply(matrix(c(lower, upper), ncol = 2), 1, function(x){x[1]:x[2]})
+
+    ## overwrite and return
+    meta[dups,2] <- unlist(vec)
+
+    return(meta)
+  }
+
+  # run adjustment and re-dup check until there are no duplicated sites
+  dc <- dup_check(meta)
+  while(any(dc$dups)){
+    meta <- adjust_pos(dc) # adjust
+    dc <- dup_check(meta) # dup check
+  }
+
+  meta <- meta[order(meta$ord),]
+  meta$ord <- NULL
+
+  return(meta)
+}
+
+make_vcf <- function(x, meta){
+  #==================convert to 0/0, 0/1, 1/1, or ./.=============
+  ind.genos <- x[,seq(1,ncol(x), by = 2)] + x[,seq(2,ncol(x), by = 2)]
+  tab <- data.frame(gt = c(0,1,2,-1), recode = c("0/0", "0/1", "1/1", "./."))
+  ind.genos <- tab[match(ind.genos, tab$gt),2]
+  ind.genos <- matrix(ind.genos, ncol = ncol(x)/2)
+
+  #==================add metadata============
+  # NOTE:
+  # (vcf expects bp, may edit later to allow a meta containing that info to be imported)
+  # for now, 0s will be A, 1s will be T, -1s will be .
+  # for now, going to do this via conversion to 0 1 2, then converting. In the future will have a skip for phased data.
+
+  vcf <- data.frame(chrom = as.numeric(as.factor(meta[,1])),
+                    pos = meta[,2],
+                    )
 }
