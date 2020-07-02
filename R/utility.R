@@ -391,6 +391,7 @@ convert_2_to_1_column <- function(x){
 #'   sorted identically to individuals in x.
 #' @param return_objects logical, default FALSE, If TRUE, returns a list with ped, bed, map, and bim data. Otherwise just saves
 #'   files.
+#' @param missing_genotypes numeric, default -9. Encoding for missing alleles/genotypes.
 #'
 #' @return Either NULL or a list containing ped, bed, map, and bim formatted data.
 #'
@@ -399,8 +400,7 @@ convert_2_to_1_column <- function(x){
 #' @references Source code pulled from the snpR package by the same author for use here.
 #'
 #' @export
-make_bed <- function(x, meta, phenos, plink_path = "/usr/bin/plink.exe", return_objects = F){
-
+make_bed <- function(x, meta, phenos, plink_path = "/usr/bin/plink.exe", return_objects = F, missing_genotypes = -9){
   # get allele names for map file down the line
   a.names <- matrix(c(1,2), nrow(x), 2, T)
 
@@ -418,6 +418,7 @@ make_bed <- function(x, meta, phenos, plink_path = "/usr/bin/plink.exe", return_
 
   # change missing data value and add a space between alleles.
   x <- x + 1
+  x[x == missing_genotypes + 1] <- 0
   x.np <- paste0(x[,seq(1,ncol(x), by = 2)], " ", x[,seq(2,ncol(x), by = 2)])
   x.np <- matrix(x.np, nrow = ncol(x)/2, byrow = T)
 
@@ -471,6 +472,7 @@ make_bed <- function(x, meta, phenos, plink_path = "/usr/bin/plink.exe", return_
   }
 }
 
+#' @export
 estim_h <- function(x, meta,
                     num_threads = 1, autosome_num = length(unique(meta[,1])), maf = 0.01,
                     gcta_path = "/usr/bin/gcta.exe", plink_path = "/usr/bin/plink.exe",
@@ -570,20 +572,134 @@ offset_overlapping_positions <- function(meta){
   return(meta)
 }
 
-make_vcf <- function(x, meta){
+#' @export
+make_vcf <- function(x, meta, missing_genotypes = -9){
   #==================convert to 0/0, 0/1, 1/1, or ./.=============
   ind.genos <- x[,seq(1,ncol(x), by = 2)] + x[,seq(2,ncol(x), by = 2)]
-  tab <- data.frame(gt = c(0,1,2,-1), recode = c("0/0", "0/1", "1/1", "./."))
+  tab <- data.frame(gt = c(0,1,2,missing_genotypes + missing_genotypes), recode = c("0/0", "0/1", "1/1", "./."))
   ind.genos <- tab[match(ind.genos, tab$gt),2]
   ind.genos <- matrix(ind.genos, ncol = ncol(x)/2)
 
-  #==================add metadata============
+  #==================add metadata to genos============
   # NOTE:
   # (vcf expects bp, may edit later to allow a meta containing that info to be imported)
   # for now, 0s will be A, 1s will be T, -1s will be .
   # for now, going to do this via conversion to 0 1 2, then converting. In the future will have a skip for phased data.
 
-  vcf <- data.frame(chrom = as.numeric(as.factor(meta[,1])),
-                    pos = meta[,2],
-                    )
+  vcf <- data.table::data.table(CHROM = as.numeric(as.factor(meta[,1])),
+                                POS = meta[,2],
+                                ID = paste0("snp", 1:nrow(meta)),
+                                REF = "A",
+                                ALT = "T",
+                                QUAL = ".",
+                                FILTER = "PASS",
+                                INFO = ".",
+                                FORMAT = "GT"
+  )
+  colnames(ind.genos) <- paste0("SAMP_", 1:ncol(ind.genos))
+  vcf <- cbind(vcf, as.data.table(ind.genos))
+  colnames(vcf)[1] <- '#CHROM'
+
+  writeLines("##fileformat=VCFv4.2\n##FORMAT=<ID=GT,Number=1,Type=Integer,Description='Genotype'>\n##FORMAT=<ID=GP,Number=G,Type=Float,Description='Genotype Probabilities'>\n##FORMAT=<ID=PL,Number=G,Type=Float,Description='Phred-scaled Genotype Likelihoods'>", "data.vcf")
+  data.table::fwrite(vcf, "data.vcf", sep = "\t", append = T, col.names = T, row.names = F, scipen = 999)
+  return(vcf)
+}
+
+impute_and_phase_beagle <- function(x = NULL, meta = NULL,
+                                    beagle_path = "/usr/bin/beagle.jar",
+                                    num_threads = 1,
+                                    ne = 1000000,
+                                    additional_args = NULL){
+  #===============sanity checks===========
+  # make a vcf if it doesn't exist
+  if(!file.exists("data.vcf")){
+    make_vcf(x, meta)
+  }
+
+  #===============construct call==========
+  old.scipen <- getOption("scipen")
+  options(scipen = 999)
+  call <- paste0("java -jar ", beagle_path, " gt=data.vcf out=data.gt nthreads=",
+                 num_threads, " ne=", ne)
+  if(!is.null(additional_args)){
+    call <- paste0(call, " ", additional_args)
+  }
+
+  #===============call beagle============
+  system(call)
+  options(scipen = old.scipen)
+
+
+  #==============parse results===========
+  # read in vcf and convert back to input format
+  res <- readLines("data.gt.vcf.gz")
+  res <- res[-which(grepl("^#", res))]
+  res <- gsub("\\|", "\t", res)
+  writeLines(res, "data.gt.two_col.txt")
+  res <- data.table::fread("data.gt.two_col.txt", drop = 1:9)
+
+  return(res)
+}
+
+#' @param x object coercable to numeric matrix containing genotype calls. Rows are loci, columns are samples. Each sample
+#'   should be the genotype for a gene copy
+sprinkle_missing_data <- function(x,
+                                  missing_dist = function(x){
+                                    missing_dist <- rnorm(x, mean = 0.05, sd = 0.02);
+                                    missing_dist[missing_dist < 0] <- 0;
+                                    return(missing_dist)
+                                  },
+                                  missing_code = -9){
+  # get missingness
+  missingness <- missing_dist(nrow(x))
+
+  # do a binom draw for missing data in each individual at each site
+  missing_logi <- rbinom((ncol(x)/2)*nrow(x), size = 1, rep(missingness, each = ncol(x)/2))
+
+  # arrange missing_logi like the data
+  missing_logi <- matrix(as.logical(missing_logi), nrow(x), ncol(x)/2, byrow = T)
+
+  # double the missing_logi to represent two gene copies per ind
+  col_seq <- rep(1:ncol(missing_logi), each = 2)
+  missing_logi <- missing_logi[,col_seq]
+
+  # add missing loci
+  x[missing_logi] <- missing_code
+
+  return(x)
+}
+
+#' @export
+assess_imputation <- function(x, x_imp, x_missing){
+  # prep input data
+  ## transpose
+  xmc <- convert_2_to_1_column(x_missing)
+  xc <- convert_2_to_1_column(x)
+  xic <- convert_2_to_1_column(x_imp)
+
+  # select missing and get metadata and mafs
+  missing_genos <- xmc == -18
+  xc <- xc[missing_genos]
+  xic <- xic[missing_genos]
+  per_loci_missing <- colSums(missing_genos)
+  chr_matrix <- matrix(rep(meta[,1], each = nrow(xmc)), nrow = nrow(xmc))
+  pos_matrix <- matrix(rep(meta[,2], each = nrow(xmc)), nrow = nrow(xmc))
+  mafs <- rowMeans(x)
+  mafs[mafs > .5] <- 1 - mafs[mafs > .5]
+  maf_matrix <- matrix(rep(mafs, each = nrow(xmc)), nrow = nrow(xmc))
+
+  # bind
+  eval <- data.table(true_geno = xc, imputed_geno = xic,
+                     chr = chr_matrix[missing_genos], pos = pos_matrix[missing_genos],
+                     maf = maf_matrix[missing_genos])
+
+  # get per loci cor
+  cors <- eval[, .(rsq = cor(true_geno, imputed_geno)^2), by=.(chr, pos)]
+  cors$maf <- eval[match(paste0(cors$chr, "_", cors$pos), paste0(eval$chr, "_", eval$pos)),5]
+
+  # plot
+  p <- ggplot2::ggplot(cors, ggplot2::aes(x = maf, y = rsq)) + ggplot2::geom_point(alpha = 0.05) + ggplot2::theme_gray()
+  print(p)
+
+  return(list(overall_rsq = cor(xc, xic)^2, per_loci_rsq = cors, plot = p))
 }
