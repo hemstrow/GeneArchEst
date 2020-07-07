@@ -8,25 +8,12 @@ ABC_on_hyperparameters(
   x,
   phenotypes,
   iters,
-  pi_func = function(x) rbeta(x, 25, 1),
-  df_func = NULL,
-  scale_func = NULL,
-  h = NULL,
-  julia.path = "julia",
-  chain_length = 1e+05,
-  burnin = 5000,
-  thin = 100,
-  method = "BayesB",
-  ABC_scheme = "A",
-  par = F,
-  run_number = NULL,
-  est_h = F,
-  save_effects = T,
-  joint_res = NULL,
-  joint_acceptance = NULL,
-  joint_res_dist = "ks.D",
-  delta = 0.5,
-  pcut = 5e-04
+  effect_distribution = rbayesB,
+  parameter_distributions = list(pi = function(x) rbeta(x, 25, 1), d.f = function(x)
+    runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3) * 100),
+  h_dist = function(x) rep(0.5, x),
+  center = T,
+  par = F
 )
 }
 \arguments{
@@ -36,41 +23,30 @@ ABC_on_hyperparameters(
 
 \item{iters}{numeric. Number of ABC permutations to run.}
 
-\item{pi_func}{function, default function(x) rbeta(x, 25, 1). A distribution function for generating pi prior. Should take only one argument (n, the number of iters).}
+\item{effect_distribution}{function, default rbayesB. A function for a distribution of effect sizes. The first argument, n,
+should be the number of effects to draw. Other arguments must be named to match the names of the parameter distribution
+functions given in the parameter_distributions argument.}
 
-\item{df_func}{function, default NULL. A distribution function for generating df prior. Should take only one argument (n, the number of iters).numeric vector of length 2, default NULL. Range (min, max) of degrees of freedom values to run.}
+\item{parameter_distributions}{List containing named functions, defualt
+list(pi = function(x) rbeta(x, 25, 1), d.f = function(x) runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3)*100).
+A list containing functions for each parameter in the effect size distribution. The given functions should be named to
+match the parameter for which they produce distributions, and should take a single argument, x, which holds the number of
+parameter values to draw.}
 
-\item{scale_func}{function, default NULL. A distribution function for generating scale prior. Should take only one argument (n, the number of iters).numeric vector of length 2, default NULL. Range (min, max) of scale values to run.}
+\item{h_dist}{function, default function(x) rep(.5, x). A function for the distribution of heritability from which to draw
+h^2 values for each iteration. Must take a single argument, x, which holds the number of h values to draw. The default
+produces only heritabilities of .5.}
 
-\item{h}{numeric, default NULL. Heritability to use. Will take a range in the future.}
-
-\item{julia.path}{character, defualt "julia". File path to the julia executable, required for JWAS.}
-
-\item{chain_length}{numeric, default 100000. Length of the MCMC chains used in each step of the ABC.}
-
-\item{burnin}{numeric, default 5000. Number of MCMC chain steps discarded at the start of each MCMC.}
-
-\item{thin}{numeric, default 100. Number of MCMC chain steps discarded between each sample used to form the posterior.}
-
-\item{method}{character, default "bayesB". The marker effect size distribution/prediction method to use.}
-
-\item{ABC_scheme}{character, default "A". The ABC_scheme to use. See details.}
+\item{center}{logical, default T. Determines if the phenotypes provided and generated during each iteration
+should be centered (have their means set to 0).}
 
 \item{par}{numeric or FALSE, default FALSE. If numeric, the number of cores on which to run the ABC.}
-
-\item{run_number}{numeric, default NULL. Controls how the itermediate output directories are named. If numeric, will be named for the number, otherwise, will be named for the iteration.}
 }
 \description{
 Runs Approximate Bayesian Computation across a range of marker effect size
-distribution hyperparameters using one of three different schemes in order to determine
-the hyperparamters that generate a distribution most like the real genomic architecture of the trait.
+distribution hyperparameters by comparing the distributions of phenotypes produced to those in the real data.
 }
 \details{
-ABC schemes: \itemize{
-    \item{"A": }{Genomic Data -> prediction with prior hyperparameters -> compare predicted phenotypes to real phenotypes.}
-    \item{"B": }{Genomic Data -> generate psuedo marker effects using distribution with prior hyperparameters -> prediction with defaults -> compare predicted phenotypes to real phenotypes.}
-    \item{"C": }{Part 1: Genomic Data -> generate psuedo marker effects using distribution with prior hyperparameters -> "pseudo" predicted marker effects.
-                 Part 2: Genomic Data -> prediction with defaults -> direct estimated marker effects.
-                 Part 3: Compare direct to "pseudo" estimated marker effects.}
-}
+Please note that no missing phenotypes or missing genotype data is permitted. Missing genotypes should be imputed
+(such as with \code{\link{impute_and_phase_beagle}}) before this function is run.
 }

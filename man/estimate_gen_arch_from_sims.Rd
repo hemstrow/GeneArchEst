@@ -10,6 +10,7 @@ estimate_gen_arch_from_sims(
   phenos,
   sims,
   ABC_res,
+  center = T,
   p = 0.25,
   num.trees = 1000,
   mtry = ncol(sims) - 1,
@@ -33,8 +34,7 @@ estimate_gen_arch_from_sims(
 )
 }
 \arguments{
-\item{x}{numeric. Descriptive statistics for the estimated effect sizes/associaion p-values
-from the observed data.}
+\item{x}{numeric matrix. Genotypes}
 
 \item{sims}{data.frame. Data.frame that matches that produced by \code{\link{sim_gen}}, containing descriptive statistics for the estimated effect sizes/associaion p-values
 from the simulted data as well as a column named 'pi' containing the simulated pi values. Each row should be a single
