@@ -1,32 +1,28 @@
 #' Conduct an ABC on a range of effect size distribution hyperparameters
 #'
 #' Runs Approximate Bayesian Computation across a range of marker effect size
-#' distribution hyperparameters using one of three different schemes in order to determine
-#' the hyperparamters that generate a distribution most like the real genomic architecture of the trait.
+#' distribution hyperparameters by comparing the distributions of phenotypes produced to those in the real data.
 #'
-#' ABC schemes: \itemize{
-#'     \item{"A": }{Genomic Data -> prediction with prior hyperparameters -> compare predicted phenotypes to real phenotypes.}
-#'     \item{"B": }{Genomic Data -> generate psuedo marker effects using distribution with prior hyperparameters -> prediction with defaults -> compare predicted phenotypes to real phenotypes.}
-#'     \item{"C": }{Part 1: Genomic Data -> generate psuedo marker effects using distribution with prior hyperparameters -> "pseudo" predicted marker effects.
-#'                  Part 2: Genomic Data -> prediction with defaults -> direct estimated marker effects.
-#'                  Part 3: Compare direct to "pseudo" estimated marker effects.}
-#' }
+#' Please note that no missing phenotypes or missing genotype data is permitted. Missing genotypes should be imputed
+#' (such as with \code{\link{impute_and_phase_beagle}}) before this function is run.
 #'
 #' @param x matrix. Input genotypes, SNPs as rows, columns as individuals. Genotypes formatted as 0,1,2 for the major homozygote, heterozygote, and minor homozygote, respectively.
 #' @param phenotypes numeric vector. Observed phenotypes, one per individual.
 #' @param iters numeric. Number of ABC permutations to run.
-#' @param pi_func function, default function(x) rbeta(x, 25, 1). A distribution function for generating pi prior. Should take only one argument (n, the number of iters).
-#' @param df_func function, default NULL. A distribution function for generating df prior. Should take only one argument (n, the number of iters).numeric vector of length 2, default NULL. Range (min, max) of degrees of freedom values to run.
-#' @param scale_func function, default NULL. A distribution function for generating scale prior. Should take only one argument (n, the number of iters).numeric vector of length 2, default NULL. Range (min, max) of scale values to run.
-#' @param h numeric, default NULL. Heritability to use. Will take a range in the future.
-#' @param julia.path character, defualt "julia". File path to the julia executable, required for JWAS.
-#' @param chain_length numeric, default 100000. Length of the MCMC chains used in each step of the ABC.
-#' @param burnin numeric, default 5000. Number of MCMC chain steps discarded at the start of each MCMC.
-#' @param thin numeric, default 100. Number of MCMC chain steps discarded between each sample used to form the posterior.
-#' @param method character, default "bayesB". The marker effect size distribution/prediction method to use.
-#' @param ABC_scheme character, default "A". The ABC_scheme to use. See details.
+#' @param effect_distribution function, default rbayesB. A function for a distribution of effect sizes. The first argument, n,
+#'   should be the number of effects to draw. Other arguments must be named to match the names of the parameter distribution
+#'   functions given in the parameter_distributions argument.
+#' @param parameter_distributions List containing named functions, defualt
+#'   list(pi = function(x) rbeta(x, 25, 1), d.f = function(x) runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3)*100).
+#'   A list containing functions for each parameter in the effect size distribution. The given functions should be named to
+#'   match the parameter for which they produce distributions, and should take a single argument, x, which holds the number of
+#'   parameter values to draw.
+#' @param h_dist function, default function(x) rep(.5, x). A function for the distribution of heritability from which to draw
+#'   h^2 values for each iteration. Must take a single argument, x, which holds the number of h values to draw. The default
+#'   produces only heritabilities of .5.
+#' @param center logical, default T. Determines if the phenotypes provided and generated during each iteration
+#'   should be centered (have their means set to 0).
 #' @param par numeric or FALSE, default FALSE. If numeric, the number of cores on which to run the ABC.
-#' @param run_number numeric, default NULL. Controls how the itermediate output directories are named. If numeric, will be named for the number, otherwise, will be named for the iteration.
 #'
 #' @export
 ABC_on_hyperparameters <- function(x, phenotypes, iters,
@@ -36,8 +32,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                                                   scale = function(x) rbeta(x, 1, 3)*100),
                                    h_dist = function(x) rep(.5, x),
                                    center = T,
-                                   par = F,
-                                   run_number = NULL){
+                                   par = F){
 
   #============general subfunctions=========================
   euclid.dist <- function(o, p){
@@ -107,8 +102,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
 
   # parallel
   else{
-    # cl <- snow::makeSOCKcluster(par)
-    # doSNOW::registerDoSNOW(cl)
+    cl <- snow::makeSOCKcluster(par)
+    doSNOW::registerDoSNOW(cl)
 
     # divide up into ncore chunks
     chunks <- list(parms = split(run_parameters, (1:iters)%%par),
@@ -119,58 +114,65 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
     progress <- function(n) cat(sprintf("Chunk %d out of", n), par, "is complete.\n")
     opts <- list(progress=progress)
 
-    # output <- foreach::foreach(q = 1:par, .inorder = FALSE, .errorhandling = "pass",
-    #                            .options.snow = opts, .packages = c("data.table", "GeneArchEst")
-    #                            ) %dopar% {
-    #
-    #                              parm_chunk <- chunks$parm[[q]]
-    #                              h_chunk <- unlist(chunks$h[[q]])
-    #                              dist_chunk <- chunks$dist_output[[q]]
-    #
-    #                              # run once per iter in this chunk
-    #                              for(i in 1:nrow(parm_chunk)){
-    #                                dist_chunk[i,] <- scheme_D(x = x,
-    #                                                            phenotypes = phenotypes,
-    #                                                            effect_distribution = effect_distribution,
-    #                                                            parameters = as.list(parm_chunk[i,,drop = F]),
-    #                                                            h = h_chunk[i],
-    #                                                            center = center)
-    #                              }
-    #                              cbind(parm_chunk, h = h_chunk, dist_chunk)
-    #                            }
+    output <- foreach::foreach(q = 1:par, .inorder = FALSE, .errorhandling = "pass",
+                               .options.snow = opts, .packages = c("data.table", "GeneArchEst")
+                               ) %dopar% {
 
+                                 parm_chunk <- chunks$parm[[q]]
+                                 h_chunk <- unlist(chunks$h[[q]])
+                                 dist_chunk <- chunks$dist_output[[q]]
+                                 is.err <- numeric(0)
+                                 errs <- character(0)
 
-    output <- vector("list", par)
-    for(q in 1:par){
+                                 # run once per iter in this chunk
+                                 for(i in 1:nrow(parm_chunk)){
+                                   b <- try(scheme_D(x = x,
+                                                     phenotypes = phenotypes,
+                                                     effect_distribution = effect_distribution,
+                                                     parameters = as.list(parm_chunk[i,,drop = F]),
+                                                     h = h_chunk[i],
+                                                     center = center), silent = T)
+                                   if(class(b) == "try-error"){
+                                     is.err <- c(is.err, i)
+                                     errs <- c(errs, b)
+                                   }
+                                   else{
+                                     dist_chunk[i,] <- b
+                                   }
+                                 }
+                                 out <- vector("list", 2)
+                                 names(out) <- c("successes", "fails")
+                                 if(length(is.err) > 0){
+                                   out[[1]] <- cbind(parm_chunk[-is.err,], h = h_chunk[-is.err], dist_chunk[-is.err,])
+                                   out[[2]] <- list(error_msg = errs,
+                                                    error_parms = cbind(parm_chunk[is.err,,drop = F], h = h_chunk[is.err]))
+                                 }
+                                 else{
+                                   out[[1]] <- cbind(parm_chunk, h = h_chunk, dist_chunk)
+                                   out[[2]] <- list(error_msg = character(0),
+                                                    error_parms = as.data.frame(matrix(NA, ncol = ncol(parm_chunk) + 1, nrow = 1)))
+                                   colnames(out[[2]]$error_parms) <- c(colnames(parm_chunk), "h")
+                                 }
+                                 out
+                               }
 
-      parm_chunk <- chunks$parm[[q]]
-      h_chunk <- unlist(chunks$h[[q]])
-      dist_chunk <- chunks$dist_output[[q]]
-
-      # run once per iter in this chunk
-      for(i in 1:nrow(parm_chunk)){
-        b <- try(scheme_D(x = x,
-                          phenotypes = phenotypes,
-                          effect_distribution = effect_distribution,
-                          parameters = as.list(parm_chunk[i,,drop = F]),
-                          h = h_chunk[i],
-                          center = center), silent = T)
-        if(class(b) == "try-error"){browser()}
-        else{
-          dist_chunk[i,] <- b
-        }
-      }
-      output[[q]] <- cbind(parm_chunk, h = h_chunk, dist_chunk)
-    }
-
-
-    browser()
     # release cores and clean up
     parallel::stopCluster(cl)
     doSNOW::registerDoSNOW()
     gc();gc()
-    output <- dplyr::bind_rows(output)
-    return(output)
+    dat <- dplyr::bind_rows(rvest::pluck(output, 1))
+    errs <- rvest::pluck(output, 2)
+    err_parms <- dplyr::bind_rows(rvest::pluck(errs, 2))
+    err_msgs <- unlist(rvest::pluck(errs, 1))
+    err_parms <- na.omit(err_parms)
+    errs <- list(parms = err_parms, msgs = err_msgs)
+    if(length(errs$msgs) > 0){
+      warning("Errors occured on some ABC iterations. See named element 'errors' in returned list for details.\n")
+    }
+    else{
+      cat("Complete, no errors on any iterations.\n")
+    }
+    return(list(ABC_res = dat, errors = errs))
   }
 }
 
