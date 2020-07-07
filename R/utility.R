@@ -351,6 +351,14 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
   a <- weighted.colSums(as.matrix(x), effect.sizes) # faster than t(x)%*%effect.sizes!
   a.ind <- a[seq(1, length(a), by = 2)] + a[seq(2, length(a), by = 2)] #add across both gene copies.
 
+  # make sure h isn't 0, less than 0, or 1
+  if(h <= 0){
+    h <- 0.00000001
+  }
+  else if(h > 1){
+    h <- 1
+  }
+
   #standardize the genetic variance if requested.
   if(standardize){
     a.ind <- a.ind/sqrt(var(a.ind)/h) # set the variance to h.
@@ -384,9 +392,9 @@ convert_2_to_1_column <- function(x){
 #' must be ran via bash command line to produce the .bed binary file.
 #'
 #' @param x matrix or object coercable to a matrix. Genotypes, in phased format (two columns per individual).
-#'   Genotypes should be in single number format (0 or 1), such as produced by \code{\link[process_ms]}.
+#'   Genotypes should be in single number format (0 or 1), such as produced by \code{\link{process_ms}}.
 #' @param meta data.frame of object coercable to data.frame. Metadata for snp data, where column 1 is the chromsome
-#'   and column 2 is the position on the chromosome in bp,such as produced by \code{\link[process_ms]}.
+#'   and column 2 is the position on the chromosome in bp,such as produced by \code{\link{process_ms}}.
 #' @param phenos character vector. A vector containing the phenotypes for each individual,
 #'   sorted identically to individuals in x.
 #' @param return_objects logical, default FALSE, If TRUE, returns a list with ped, bed, map, and bim data. Otherwise just saves
@@ -641,8 +649,10 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
   return(res)
 }
 
+#' Adds missing data to a genotype dataset.
 #' @param x object coercable to numeric matrix containing genotype calls. Rows are loci, columns are samples. Each sample
 #'   should be the genotype for a gene copy
+#' @export
 sprinkle_missing_data <- function(x,
                                   missing_dist = function(x){
                                     missing_dist <- rnorm(x, mean = 0.05, sd = 0.02);
