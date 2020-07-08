@@ -1,116 +1,74 @@
 #' @export
-sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 25, 1),
-                    df_func = NULL,  scale_func = NULL, h_func = NULL, center = T, scheme = "gwas",
-                    method = "BayesB",
-                    burnin = burnin, thin = thin, chain_length = chain_length,
-                    par = F, save_effects = T,
-                    joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
-                    peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, run_number = NULL){
-
-  #============general subfunctions=========================
-  generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL, center = T){
-    if(method == "BayesB"){
-
-      pseudo_effects <- rbayesB(nrow(x), pi, df, scale)
-      pseudo_phenos <- get.pheno.vals(x, pseudo_effects, h)$p
-      if(center){
-        pseudo_phenos <- pseudo_phenos - mean(pseudo_phenos)
-      }
-    }
-    return(list(e = pseudo_effects, p = pseudo_phenos))
-  }
+sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
+                    effect_distribution = rbayesB,
+                    parameter_distributions = list(pi = function(x) rbeta(x, 25, 1),
+                                                   d.f = function(x) runif(x, 1, 100),
+                                                   scale = function(x) rbeta(x, 1, 3)*100),
+                    h_dist = function(x) rep(.5, x),
+                    # burnin = burnin, thin = thin, chain_length = chain_length, method = "BayesB",
+                    par = F, joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
+                    peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50){
 
   #============schem functions for one simulation=============
-  gp <- function(x, pi, df, scale, method, t_iter, h, windows, center = center){
-    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h, center = center)
+  # gp <- function(x, pi, df, scale, method, t_iter, h, windows, center = center){
+  #   pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center)
+  #
+  #   cat("Beginning pseudo data", method, "run.\n")
+  #   pseudo.pred <-pred(x, phenotypes = pseudo$p,
+  #                      burnin = burnin, thin = thin, chain_length = chain_length,
+  #                      prediction.program = "BGLR", prediction.model = method,
+  #                      runID = paste0(t_iter, "_pseudo"), verbose = F)
+  #
+  #   stats <- dist_desc(pseudo.pred, meta, windows, peak_delta, peak_pcut, chr, pvals = F)
+  #
+  #   return(list(stats = stats, e = pseudo$e))
+  # }
+  gwas <- function(x, effect_distribution, parameters, h, center = center,
+                   t_iter, G, windows){
 
-    cat("Beginning pseudo data", method, "run.\n")
-    pseudo.pred <-pred(x, phenotypes = pseudo$p,
-                       burnin = burnin, thin = thin, chain_length = chain_length,
-                       prediction.program = "BGLR", prediction.model = method,
-                       runID = paste0(t_iter, "_pseudo"), verbose = F)
+    pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center)
 
-    stats <- dist_desc(pseudo.pred, meta, windows, peak_delta, peak_pcut, chr, pvals = F)
-
-    return(list(stats = stats, e = pseudo$e))
-  }
-  gwas <- function(x, pi, df, scale, method, t_iter, G, h, windows, center = center){
-    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h, center = center)
     pseudo_pi <- pred(x, phenotypes = pseudo$p,
                       prediction.program = "GMMAT",
-                      maf.filt = F, runID = paste0(t_iter, "gmmat_pseudo"),
+                      maf.filt = F, runID = paste0(t_iter, "_gmmat"),
                       pass_G = G)$e.eff$PVAL
 
-    stats <- dist_desc(pseudo_pi, meta, windows, peak_delta, peak_pcut, chr, pvals = T)
-    return(list(stats = stats, e = pseudo$e))
+    stats <- dist_desc(pseudo_pi, meta, windows, peak_delta, peak_pcut, colnames(meta)[1], pvals = T)
+    return(stats)
   }
 
-  loop_func <- function(x, pi, df, scale, method, scheme, t_iter, G = NULL, h, windows, center = center){
-    if(scheme == "gp"){
-      dist <- gp(x, pi, df, scale, method, t_iter, h, windows, center = center)
-    }
-    else if(scheme == "gwas"){
-      dist <- gwas(x, pi, df, scale, method, t_iter, G = G, h = h, windows, center = center)
+  loop_func <- function(x, effect_distribution, parameters, scheme,
+                        t_iter, G = NULL, h, windows, center = center){
+    # if(scheme == "gp"){
+    #   dist <- gp(x, pi, df, scale, method, t_iter, h, windows, center = center)
+    # }
+    if(scheme == "gwas"){
+      dist <- gwas(x, effect_distribution, parameters = parameters, h = h, center = center,
+                   t_iter = t_iter, windows = windows, G = G)
     }
     return(dist)
   }
 
   #============prep for simulations======================================
-  # get the random values to run
-  joint_params <- character()
-  if(!is.null(df_func)){
-    if(!is.function(df_func)){
-      if(df_func == "joint"){
-        joint_params <- "df"
-      }
-      else{
-        stop("df func is neither a function or 'joint'.\n")
-      }
-    }
-    else{
-      run_dfs <- df_func(iters)
-    }
-  }
-  else{
-    run_dfs <- rep(NA, iters)
-  }
-  if(!is.null(scale_func)){
-    if(!is.function(scale_func)){
-      if(scale_func == "joint"){
-        joint_params <- c(joint_params, "scale")
-      }
-      else{
-        stop("scale func is neither a function or 'joint'.\n")
-      }
-    }
-    else{
-      run_scales <- scale_func(iters)
-    }
-  }
-  else{
-    run_scales <- rep(NA, iters)
-  }
-  if(!is.function(pi_func)){
-    if(pi_func == "joint"){
-      joint_params <- c(joint_params, "pi")
-    }
-    else{
-      stop("pi func is neither a function or 'joint'.\n")
-    }
-  }
-  else{
-    run_pis <- pi_func(iters)
-  }
-  run_hs <- h_func(iters)
-
   # if any joint parameter priors, calculate and disambiguate
-  if(length(joint_params) > 0){
-    joint_params <- gen_parms(iters, joint_res, joint_acceptance, joint_params, dist.var = joint_res_dist)
-    colnames(joint_params) <- paste0("run_", colnames(joint_params), "s")
-    for(i in 1:ncol(joint_params)){
-      assign(colnames(joint_params)[i], joint_params[,i])
+  joint_parms <- names(parameter_distributions)[which(parameter_distributions == "joint")]
+  if(length(joint_parms) > 0){
+    parms <- gen_parms(iters, joint_res, joint_acceptance, joint_parms, dist.var = joint_res_dist)
+
+    if(ncol(parms) < length(parameter_distributions)){
+      other_parms <- names(parameter_distributions)[which(!names(parameter_distributions) %in% colnames(parms))]
+      run_parameters <- vector("list", length = length(other_parms))
+      names(run_parameters) <- other_parms
+      for(i in 1:length(run_parameters)){
+        run_parameters[[i]] <- parameter_distributions[[other_parms[i]]](iters)
+      }
+      parms <- cbind(parms, as.data.frame(run_parameters))
     }
+    run_parameters <- parms
+    rm(parms)
   }
+  h <- h_dist(iters)
+
 
   # can pass a g matrix forward once if doing gwas
   if(scheme == "gwas"){
@@ -118,7 +76,7 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
     colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
 
-    G <- AGHmatrix::Gmatrix(ind.genos, missingValue = NA, method = "Yang", maf = 0.05)
+    G <- AGHmatrix::Gmatrix(ind.genos, missingValue = -18, method = "Yang", maf = 0.05)
     colnames(G) <- rownames(ind.genos)
     rownames(G) <- rownames(ind.genos)
   }
@@ -127,112 +85,102 @@ sim_gen <- function(x, meta, iters, chr = "chr", pi_func = function(x) rbeta(x, 
   }
 
   # pre-run the window function
-  windows <- mark_windows(meta, window_sigma, chr)
+  windows <- mark_windows(meta, window_sigma, colnames(meta)[1])
 
 
   #============run the simulations===========================
   # initialize storage
-  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, h = run_hs, matrix(NA, length(run_dfs), number_descriptive_stats))
+  dist_output <-  matrix(0, iters, ncol = number_descriptive_stats)
+  colnames(dist_output) <- names_descriptive_stats
 
-
-  # run the ABC
+  # run the simulations
   ## serial
   if(par == F){
-    # initialize effects storage
-    if(save_effects){
-      out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = iters))
-    }
-
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
-      if(is.numeric(run_number)){rn <- run_number}
-      else{rn <- i}
-
-      tout <- loop_func(x = x, pi = out[i,"pi"], df = out[i,"df"], scale = out[i,"scale"],
-                        method = method, scheme = scheme, t_iter = rn, G = G, h = out[i,"h"],
-                        windows = windows, center = center)
-
-      out[i, 5:ncol(out)] <- tout$stats
-
-      if(save_effects){
-        data.table::set(out.effects, j = i,  value = tout$e)
-      }
+      dist_output[i,] <- loop_func(x, effect_distribution,
+                                   parameters = as.list(run_parameters[i,,drop = F]),
+                                   scheme = scheme,
+                                   t_iter = i, G = G, h = h[i], windows = windows, center = center)
     }
-    colnames(out)[5:ncol(out)] <- names(tout$stats)
+    return(cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)))
   }
 
 
   # parallel
   else{
-    parms <- out[,-ncol(out)]
     cl <- snow::makeSOCKcluster(par)
     doSNOW::registerDoSNOW(cl)
 
     # divide up into ncore chunks
-    chunks <- split(as.data.frame(out), (1:nrow(out))%%par)
+    chunks <- list(parms = split(run_parameters, (1:iters)%%par),
+                   dist_output = split(as.data.frame(dist_output), (1:iters)%%par),
+                   h = split(as.data.frame(h), (1:iters)%%par))
+
 
     # prepare reporting function
     progress <- function(n) cat(sprintf("Chunk %d out of", n), par, "is complete.\n")
     opts <- list(progress=progress)
 
-    output <- foreach::foreach(i = 1:par, .inorder = FALSE,
-                               .options.snow = opts,
-                               .export = c("rbayesB", "get.pheno.vals", "e.dist.func", "pred",
-                                           "convert_2_to_1_column", "calc_dist_stats",
-                                           "cucconi.stat", "lepage.stat"), .packages = c("data.table", "inline"),
-                               .noexport = "weighted.colSums") %dopar% {
+    output <- foreach::foreach(q = 1:par, .inorder = FALSE,
+                               .options.snow = opts, .packages = c("data.table", "GeneArchEst")
+                               ) %dopar% {
 
-                                 # remake the weighted.colSums function, since the inline part doesn't work in packages
-                                 # and writing the same code as a .cpp is actually much slower
-                                 weighted.colSums <- function(data, weights){
-                                   return(crossprod(t(data), weights))
-                                 }
+                                 parm_chunk <- chunks$parm[[q]]
+                                 h_chunk <- unlist(chunks$h[[q]])
+                                 dist_chunk <- chunks$dist_output[[q]]
+                                 is.err <- numeric(0)
+                                 errs <- character(0)
 
-
-                                 out <- chunks[[i]]
-                                 if(save_effects){
-                                   out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = nrow(out)))
-                                 }
 
                                  # run once per iter in this chunk
-                                 for(j in 1:nrow(out)){
-                                   if(is.numeric(run_number)){rn <- run_number}
-                                   else{rn <- j}
-                                   tout <- loop_func(x = x, pi = out[j,"pi"], df = out[j,"df"], scale = out[j,"scale"],
-                                                     method = method, scheme = scheme, t_iter = rn, G = G, h = out[j,"h"],
-                                                     windows = windows, center = center)
-                                   out[j, 5:ncol(out)] <- tout$stats
-                                   if(save_effects){
-                                     data.table::set(out.effects, j = j,  value = tout$e)
+                                 for(i in 1:nrow(parm_chunk)){
+                                   b <- try(loop_func(x, effect_distribution,
+                                                      parameters = as.list(parm_chunk[i,,drop = F]),
+                                                      scheme = scheme,
+                                                      t_iter = paste0(q, "_", i), G = G, h = h_chunk[i],
+                                                      windows = windows, center = center), silent = T)
+                                   if(class(b) == "try-error"){
+                                     is.err <- c(is.err, i)
+                                     errs <- c(errs, b)
+                                   }
+                                   else{
+                                     dist_chunk[i,] <- b
                                    }
                                  }
-                                 colnames(out)[5:ncol(out)] <- names(tout$stats)
-                                 if(save_effects){
-                                   out <- list(stats = out, effects = out.effects)
+                                 out <- vector("list", 2)
+                                 names(out) <- c("successes", "fails")
+                                 if(length(is.err) > 0){
+                                   out[[1]] <- cbind(parm_chunk[-is.err,], h = h_chunk[-is.err], dist_chunk[-is.err,])
+                                   out[[2]] <- list(error_msg = errs,
+                                                    error_parms = cbind(parm_chunk[is.err,,drop = F], h = h_chunk[is.err]))
+                                 }
+                                 else{
+                                   out[[1]] <- cbind(parm_chunk, h = h_chunk, dist_chunk)
+                                   out[[2]] <- list(error_msg = character(0),
+                                                    error_parms = as.data.frame(matrix(NA, ncol = ncol(parm_chunk) + 1, nrow = 1)))
+                                   colnames(out[[2]]$error_parms) <- c(colnames(parm_chunk), "h")
                                  }
                                  out
                                }
 
 
-    # release cores and clean up
     parallel::stopCluster(cl)
     doSNOW::registerDoSNOW()
     gc();gc()
+    dat <- dplyr::bind_rows(rvest::pluck(output, 1))
+    errs <- rvest::pluck(output, 2)
+    err_parms <- dplyr::bind_rows(rvest::pluck(errs, 2))
+    err_msgs <- unlist(rvest::pluck(errs, 1))
+    err_parms <- na.omit(err_parms)
+    errs <- list(parms = err_parms, msgs = err_msgs)
 
-    # bind, relies on rvest::pluck to grab only the first or only the second part
-    if(save_effects){
-      out <- dplyr::bind_rows(rvest::pluck(output, 1))
-      out.effects <- dplyr::bind_cols(rvest::pluck(output, 2))
+    if(length(errs$msgs) > 0){
+      warning("Errors occured on some simulations. See named element 'errors' in returned list for details.\n")
     }
     else{
-      out <- dplyr::bind_rows(output)
+      cat("Complete, no errors on any iterations.\n")
     }
-  }
-
-  if(save_effects){
-    return(list(stats = out, effects = out.effects))
-  }
-  else{
-    return(list(stats = out))
+    return(list(stats = dat, errors = errs))
   }
 }
