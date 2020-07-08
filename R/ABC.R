@@ -34,31 +34,10 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                    center = T,
                                    par = F){
 
-  #============general subfunctions=========================
-  euclid.dist <- function(o, p){
-    dist <- sqrt(sum((o - p)^2))
-    return(dist)
-  }
-  euclid.distribution.dist <- function(o, p){
-    if(sum(p) == 0){
-      return(rep(NA, length(names_diff_stats)))
-    }
-    dist <- compare_distributions(o, p)
-    return(dist)
-  }
-  generate_pseudo_effects <- function(x, effect_distribution, parameters, h, center = T){
-    pseudo_effects <- do.call(effect_distribution, c(list(n = nrow(x)), parameters))
-    pseudo_phenos <- get.pheno.vals(x, pseudo_effects, h)$p
-    if(center){
-      pseudo_phenos <- pseudo_phenos - mean(pseudo_phenos)
-    }
-    return(list(e = pseudo_effects, p = pseudo_phenos))
-  }
-
   #============ABC_scheme function for one rep=============
   scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center){
     pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center)
-    dist <- euclid.distribution.dist(phenotypes, pseudo$p)
+    dist <- compare_distributions(phenotypes, pseudo$p)
     return(dist)
   }
 

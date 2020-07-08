@@ -113,8 +113,12 @@ dist_desc <- function(p, meta, windows, delta, pcut = .005, chr = "chr", pvals =
 }
 
 
-
+#' compare two different effect size/phenotype/etc distributions
 compare_distributions <- function(o, p){
+  if(sum(p) == 0){
+    return(rep(NA, length(names_diff_stats)))
+  }
+
   # descriptive for p
   quantsp <- quantile(p, probs = seq(0.1, 0.9, length.out = 20))
   names(quantsp) <- paste0("Quantile_", names(quantsp))
@@ -144,4 +148,22 @@ compare_distributions <- function(o, p){
   out <- c(abs(out_desc_o - out_desc_p), out_dist)
   names(out) <- names_diff_stats
   return(out)
+}
+
+
+
+#' Get euclidian distance
+euclid.dist <- function(o, p){
+  dist <- sqrt(sum((o - p)^2))
+  return(dist)
+}
+
+#' generate psuedo effects using passed parameters, an effect size distribution, and heritability.
+generate_pseudo_effects <- function(x, effect_distribution, parameters, h, center = T){
+  pseudo_effects <- do.call(effect_distribution, c(list(n = nrow(x)), parameters))
+  pseudo_phenos <- get.pheno.vals(x, pseudo_effects, h)$p
+  if(center){
+    pseudo_phenos <- pseudo_phenos - mean(pseudo_phenos)
+  }
+  return(list(e = pseudo_effects, p = pseudo_phenos))
 }
