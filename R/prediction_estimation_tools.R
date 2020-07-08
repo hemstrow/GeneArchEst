@@ -191,13 +191,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     phenotypes <- phenotypes$p
   }
 
-  # # create the directory to store results if it doesn't already exist and move over to it.
-  if(!dir.exists(runID)){
-    dir.create(runID)
-  }
-  owd <- getwd()
-  setwd(runID)
-
   #============format data for prediction/GWAS==============
   #filter:
   x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
@@ -209,6 +202,12 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
 
 
   if(prediction.program == "JWAS"){
+    odw <- getwd()
+    if(!dir.exists(runID)){
+      dir.create(runID)
+    }
+    setwd(runID)
+
     # make an individual effect file.
     ind.effects <- cbind(samp = as.character(1:500), phenotypes = phenotypes)
     write.table(ind.effects, "ie.txt", quote = F, col.names = T, row.names = F)
@@ -332,7 +331,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
       write.table(meta, "est_meta.txt", sep = "\t", quote = F, col.names = T, row.names = F)
     }
 
-    setwd(owd)
     return(list(x = x, e.eff = e.eff, phenotypes = r.ind.effects, meta = meta, h = h2, prediction.program = "BGLR",
                 prediction.model = prediction.model, output.model = list(mod = BGLR_mod, data = ETA), kept.snps = kept.snps))
   }
@@ -354,7 +352,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                            mtry = mtry, num.trees = ntree, importance = "permutation", verbose = T, num.threads = par)
     }
 
-    setwd(owd)
     return(list(x = x, phenotypes = r.ind.effects, meta = meta, prediction.program = "ranger",
                 prediction.model = "RJ", output.model = list(model = rj), kept.snps = kept.snps))
   }
@@ -378,19 +375,21 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
 
     # run the test
     ## prepare infile
+    infile <- paste0(runID, "_asso_in.txt")
+    outfile <- paste0(runID, "_asso_out_score.txt")
     asso_in <- as.data.table(t(ind.genos))
     asso_in[, "snp_id" := colnames(ind.genos)]
     setcolorder(asso_in, c("snp_id", colnames(asso_in)[1:nrow(ind.genos)]))
-    suppressMessages(data.table::fwrite(asso_in, "asso_in.txt", sep = "\t", col.names = T, row.names = F))
+    suppressMessages(data.table::fwrite(asso_in, infile, sep = "\t", col.names = T, row.names = F))
     ## run
     score.out <- GMMAT::glmm.score(obj = mod,
-                                   infile = "asso_in.txt",
-                                   outfile = "asso_out_score.txt",
+                                   infile = infile,
+                                   outfile = outfile,
                                    infile.nrow.skip = 1,
                                    infile.ncol.skip = 1)
-    score.out <- read.table("asso_out_score.txt", header = T, stringsAsFactors = F)
+    score.out <- read.table(outfile, header = T, stringsAsFactors = F)
     ## clean
-    file.remove(c("asso_in.txt", "asso_out_score.txt"))
+    file.remove(c(outfile, infile))
 
     # return
     return(list(x = x, e.eff = score.out, phenotypes = r.ind.effects, meta = meta, prediction.program = "GMMAT",
