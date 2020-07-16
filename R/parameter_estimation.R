@@ -88,9 +88,6 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
                                          parameter_back_transforms = list(pi = function(pi) 1 - 10^pi ),
                                          importance = "permutation", scheme = "gwas",
                                          peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
-                                         # ABC_acceptance_threshold = 0.005, ABC_dist_var = "ks",
-                                         # ABC_scale_transform = function(scale) log10(scale),
-                                         # ABC_scale_back_transform = function(scale) 10^scale,
                                          quantiles = seq(0 + .001, 1 - .001, by = .001),
                                          ...){
   #==========rf construction, evaluation, and prediction subfunction==========
@@ -264,19 +261,11 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
 
 #' Estimate a hyperparamter from ABC results via regression.
 #'
-#' Esitmates scale based on ABC results using gam smoothing.
-#'
-#' @param x data.frame. ABC results, such as those given by \code{\link{ABC_on_hyperparameters}}.
-#' @param pi numeric. Vector of pi values for which to calculate scale.
-#' @param pi_transform function or FALSE, default function(pi) log10(1 - pi). Transformation to use on pi. Usefull if pi values in simulations
-#'   are heavily skewed, as is likely given that it is a non-linear parameter.
-#' @param threshold numeric, default 0.005. Proportion of accepted runs.
-#' @param dist_var character, default "ks". Name of the distance varaible to use in picking accepted runs.
-#'
+#' Esitmates scale based on ABC results using gam smoothing or regression forest.
 #' @export
 hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, formula = scale ~ pi,
                                              regression_method = "rf",
-                                             num_trees = 1000,
+                                             num_trees = 10000,
                                              num_threads = NULL,
                                              parameter_transforms = list(pi = function(pi) log10(1 - pi),
                                                                          scale = function(scale) log10(scale)),
