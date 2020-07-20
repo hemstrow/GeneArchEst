@@ -31,9 +31,6 @@ Imports:
     mgcv,
     nonpar,
     ranger,
-    Rcpp,
     reshape2,
     rvest,
     snow
-LinkingTo: 
-    Rcpp
