@@ -103,7 +103,12 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                                    scheme = scheme,
                                    t_iter = i, G = G, h = h[i], windows = windows, center = center)
     }
-    return(cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)))
+    ret <- cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output))
+    if(!is.list(ret)){
+      ret <- as.data.frame(t(ret))
+    }
+
+    return(list(stats = ret, errors = list(parms = ret[-c(1:nrow(ret)),], msgs = character())))
   }
 
 
