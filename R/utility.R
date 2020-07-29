@@ -613,6 +613,7 @@ make_vcf <- function(x, meta, missing_genotypes = -9){
   return(vcf)
 }
 
+#' @export
 impute_and_phase_beagle <- function(x = NULL, meta = NULL,
                                     beagle_path = "/usr/bin/beagle.jar",
                                     num_threads = 1,
@@ -640,14 +641,28 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
 
   #==============parse results===========
   # read in vcf and convert back to input format
-  res <- readLines("data.gt.vcf.gz")
+  res <- process_vcf("data.gt.vcf.gz", clean = F)
+
+  return(res)
+}
+
+#' @export
+process_vcf <- function(file, phased = T, clean = T){
+  res <- readLines(file)
   res <- res[-which(grepl("^#", res))]
   res <- gsub("\\|", "\t", res)
   writeLines(res, "data.gt.two_col.txt")
   res <- data.table::fread("data.gt.two_col.txt", drop = 1:9)
+  if(clean){file.rm("data.gt.two_col.txt")}
+
+
+  if(!phased){
+    res <- res[,seq(1,ncol(res), by = 2)] + res[,seq(2,ncol(res), by = 2)]
+  }
 
   return(res)
 }
+
 
 #' Adds missing data to a genotype dataset.
 #' @param x object coercable to numeric matrix containing genotype calls. Rows are loci, columns are samples. Each sample
