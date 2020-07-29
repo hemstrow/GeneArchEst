@@ -468,8 +468,11 @@ hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, 
 
   cat("Plotting esitmates. Red polygon represents 95% prediction limits of independent variable along y axis, and 95% prediction limits for each of those independent varibale values along the y axis.\n")
   print(tp)
+
+  ret_quants <- cbind(intervals[,independent], predictions)
+  colnames(ret_quants)[1:length(independent)] <- independent
   return(list(optimal_fits = intervals[,c(independent, paste0("pred_", dependent))],
-              quantiles = cbind(intervals[,independent], predictions),
+              quantiles = ret_quants,
               cross_val_fit_plot = dep_conf_plot,
               joint_quantile_plot = tp))
 }
