@@ -641,22 +641,41 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
 
   #==============parse results===========
   # read in vcf and convert back to input format
-  res <- process_vcf("data.gt.vcf.gz", clean = F)
+  res <- process_vcf("data.gt.vcf.gz", clean = F, filter_non_poly = F)
 
-  return(res)
+  return(res$genotypes)
 }
 
 #' @export
-process_vcf <- function(file, phased = T, clean = T){
+process_vcf <- function(file, phased = T, clean = T, filter_non_poly = T){
+  # read in and parse
   res <- readLines(file)
   res <- res[-which(grepl("^#", res))]
   res <- gsub("\\|", "\t", res)
   res <- gsub("\\/", "\t", res)
+
+  # write and read to get to matrix (not ideal...)
   writeLines(res, "data.gt.two_col.txt")
   res <- data.table::fread("data.gt.two_col.txt", drop = 1:9)
   res <- as.matrix(res)
-  if(clean){file.remove("data.gt.two_col.txt")}
+  meta <- data.table::fread("data.gt.two_col.txt", select = 1:2)
+  colnames(meta) <- c("chr", "position")
 
+  # fix things where the 1 is a minor.
+  # not really a problem, just makes every - allele effect essentially a + and vice versa, but cleaner this way.
+  min_flip <- which(rowMeans(res, na.rm = T) > 0.5)
+  res[min_flip,] <- ifelse(res[min_flip,] == 0, 1, 0)
+
+  if(filter_non_poly){
+    np <- which(rowSums(res, na.rm = T) == 0)
+    if(length(np) != 0){
+      res <- res[-np,]
+      meta <- meta[-np,]
+    }
+  }
+
+  # clean and fix if not phased
+  if(clean){file.remove("data.gt.two_col.txt")}
 
   if(!phased){
     res[res == "."] <- -4.5
@@ -664,7 +683,8 @@ process_vcf <- function(file, phased = T, clean = T){
     res <- res[,seq(1,ncol(res), by = 2)] + res[,seq(2,ncol(res), by = 2)]
   }
 
-  return(res)
+  # return
+  return(list(genotypes = res, meta = meta))
 }
 
 
