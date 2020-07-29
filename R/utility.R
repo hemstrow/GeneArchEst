@@ -651,12 +651,16 @@ process_vcf <- function(file, phased = T, clean = T){
   res <- readLines(file)
   res <- res[-which(grepl("^#", res))]
   res <- gsub("\\|", "\t", res)
+  res <- gsub("\\/", "\t", res)
   writeLines(res, "data.gt.two_col.txt")
   res <- data.table::fread("data.gt.two_col.txt", drop = 1:9)
-  if(clean){file.rm("data.gt.two_col.txt")}
+  res <- as.matrix(res)
+  if(clean){file.remove("data.gt.two_col.txt")}
 
 
   if(!phased){
+    res[res == "."] <- -4.5
+    res <- matrix(as.numeric(res), nrow(res), ncol(res))
     res <- res[,seq(1,ncol(res), by = 2)] + res[,seq(2,ncol(res), by = 2)]
   }
 
