@@ -647,19 +647,26 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
 }
 
 #' @export
-process_vcf <- function(file, phased = T, clean = T, filter_non_poly = T){
+process_vcf <- function(file, phased = T, filter_non_poly = T){
   # read in and parse
   res <- readLines(file)
-  res <- res[-which(grepl("^#", res))]
+  res <- res[-which(grepl("^##", res))]
+  header <- res[1]
+  res <- res[-1]
   res <- gsub("\\|", "\t", res)
   res <- gsub("\\/", "\t", res)
-
-  # write and read to get to matrix (not ideal...)
-  writeLines(res, "data.gt.two_col.txt")
-  res <- data.table::fread("data.gt.two_col.txt", drop = 1:9)
-  res <- as.matrix(res)
-  meta <- data.table::fread("data.gt.two_col.txt", select = 1:2)
+  header <- unlist(strsplit(header, "\t"))
+  header <- rep(header[-c(1:9)], each = 2)
+  res <- strsplit(res, "\t")
+  res <- as.data.table(res)
+  res <- t(res)
+  meta <- as.data.frame(res[,c(1:2)])
   colnames(meta) <- c("chr", "position")
+  meta$position <- as.numeric(as.character(meta$position))
+  meta$chr <- as.character(meta$chr)
+  res <- res[,-c(1:9)]
+  res <- matrix(as.numeric(res), nrow(res), ncol(res))
+  colnames(res) <- paste(header, 1:2, sep = "_")
 
   # fix things where the 1 is a minor.
   # not really a problem, just makes every - allele effect essentially a + and vice versa, but cleaner this way.
@@ -674,17 +681,15 @@ process_vcf <- function(file, phased = T, clean = T, filter_non_poly = T){
     }
   }
 
-  # clean and fix if not phased
-  if(clean){file.remove("data.gt.two_col.txt")}
-
   if(!phased){
     res[res == "."] <- -4.5
     res <- matrix(as.numeric(res), nrow(res), ncol(res))
     res <- res[,seq(1,ncol(res), by = 2)] + res[,seq(2,ncol(res), by = 2)]
+    colnames(res) <- header
   }
 
   # return
-  return(list(genotypes = res, meta = meta))
+  return(list(genotypes = as.data.table(res), meta = meta))
 }
 
 
@@ -751,4 +756,26 @@ assess_imputation <- function(x, x_imp, x_missing){
   print(p)
 
   return(list(overall_rsq = cor(xc, xic)^2, per_loci_rsq = cors, plot = p))
+}
+
+#' Remove genotypes without phenotypic data.
+#'
+#' @param genotypes numeric matrix, data.table, or data.frame. Input genotypes, two columns per individual.
+#' @param phenos numeric vector. Phenotypes for each individual. Missing data should be marked with NA.
+#' @export
+clean_phenotypes <- function(genotypes, phenos){
+  missing <- which(is.na(phenos))
+  if(length(missing) > 0){
+    phenos <- phenos[-missing]
+    iids <- rep(1:(ncol(genotypes)/2), each = 2)
+    matches <- which(iids %in% missing)
+    if(is.data.table(genotypes)){
+      genotypes <- genotypes[,-..matches]
+    }
+    else{
+      genotypes <- genotypes[,-matches]
+    }
+  }
+
+  return(list(genotypes = genotypes, phenos = phenos))
 }
