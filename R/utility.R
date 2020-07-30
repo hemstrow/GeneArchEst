@@ -641,7 +641,7 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
 
   #==============parse results===========
   # read in vcf and convert back to input format
-  res <- process_vcf("data.gt.vcf.gz", clean = F, filter_non_poly = F)
+  res <- process_vcf("data.gt.vcf.gz", filter_non_poly = F)
 
   return(res$genotypes)
 }
