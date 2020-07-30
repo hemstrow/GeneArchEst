@@ -23,6 +23,7 @@ hyperparameter_random_forest(
   peak_pcut = 5e-04,
   window_sigma = 50,
   quantiles = seq(0 + 0.001, 1 - 0.001, by = 0.001),
+  save_rf = FALSE,
   ...
 )
 }
@@ -65,7 +66,10 @@ By and large, this isn't needed for genetic architecture prediciton, and can be 
 
 \item{quantiles}{numeric, default seq(0 + 0.001, 1 - 0.001, .001). Density quantiles over which to estimate parameter values.}
 
-\item{...}{extra arguments passed to \code{\link[ranger]{ranger}}.}
+\item{save_rf}{logical, default FALSE. If true, the raw ranger random forest object is returned. Can be extremely large, and
+not needed unless different quantiles/predictions/etc are needed.}
+
+\item{...}{Extra arguments passed to \code{\link[ranger]{ranger}}.}
 
 \item{parameter_transforms.}{Named list of parameter transformations or NULL, default list(pi = function(pi) log10(1 - pi)).
 Transformations to use on any estimated parameters. Any estimated hyperparameters with names matching those

@@ -77,7 +77,9 @@ calc_distribution_stats <- function(x, meta, phenos, center = T, scheme = "gwas"
 #' @param peak_pcut numeric, default 0.0005. Only p-values below this quantile will be used for peak detection during peak indentification for distribution description.
 #' @param window_sigma numeric, default = 50. Size of the windows in megabases to be used during distribution description.
 #' @param quantiles numeric, default seq(0 + 0.001, 1 - 0.001, .001). Density quantiles over which to estimate parameter values.
-#' @param ... extra arguments passed to \code{\link[ranger]{ranger}}.
+#' @param save_rf logical, default FALSE. If true, the raw ranger random forest object is returned. Can be extremely large, and
+#'   not needed unless different quantiles/predictions/etc are needed.
+#' @param ... Extra arguments passed to \code{\link[ranger]{ranger}}.
 #'
 #' @author William Hemstrom
 #' @export
@@ -88,11 +90,11 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
                                          parameter_back_transforms = list(pi = function(pi) 1 - 10^pi ),
                                          importance = "permutation", scheme = "gwas",
                                          peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
-                                         quantiles = seq(0 + .001, 1 - .001, by = .001),
+                                         quantiles = seq(0 + .001, 1 - .001, by = .001), save_rf = FALSE,
                                          ...){
   #==========rf construction, evaluation, and prediction subfunction==========
   make_and_predict_rf <- function(dat_test, dat_train, param_train, param_test, hyperparameter,
-                                  mtry, num_trees, num_threads, importance, stats, ...){
+                                  mtry, num_trees, num_threads, importance, stats, save_rf = FALSE, ...){
 
 
     #=================construct the random forest=================
@@ -150,7 +152,8 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
 
     cat("Done!\n")
 
-    return(list(rf = rf, cross_validation = pe$estimates, point_estimate = pe2$estimates[1,], parameter_density = ed,
+
+    return(list(rf = ifelse(save_rf, rf, FALSE), cross_validation = pe$estimates, point_estimate = pe2$estimates[1,], parameter_density = ed,
                 descriptive_stats = stats,
                 cross_val_plot = cv.plot))
   }
@@ -232,7 +235,9 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
                                     num_trees = num_trees,
                                     num_threads = num_threads,
                                     importance = importance,
-                                    stats = stats, ...)
+                                    stats = stats,
+                                    save_rf = save_rf,
+                                    ...)
   }
 
 
