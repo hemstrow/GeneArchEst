@@ -649,29 +649,21 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
 #' @export
 process_vcf <- function(file, phased = T, filter_non_poly = T){
   # read in and parse
-  res <- readLines(file)
-  res <- res[-which(grepl("^##", res))]
-  header <- res[1]
-  res <- res[-1]
-  res <- gsub("\\|", "\t", res)
-  res <- gsub("\\/", "\t", res)
-  header <- unlist(strsplit(header, "\t"))
-  header <- rep(header[-c(1:9)], each = 2)
-  res <- strsplit(res, "\t")
-  res <- as.data.table(res)
-  res <- t(res)
-  meta <- as.data.frame(res[,c(1:2)])
-  colnames(meta) <- c("chr", "position")
-  meta$position <- as.numeric(as.character(meta$position))
-  meta$chr <- as.character(meta$chr)
+  #res <- data.table::fread(cmd = paste("grep -v ##", file, " | tr '|' '\t")) # doesn't work on windows because it refuses to escape the pipe
+  res <- data.table::fread(cmd = paste("grep -v ##", file))
+  header <- colnames(res)[-c(1:9)]
+  meta <- res[,1:2]
   res <- res[,-c(1:9)]
-  res <- matrix(as.numeric(res), nrow(res), ncol(res))
-  colnames(res) <- paste(header, 1:2, sep = "_")
+  res <- res[, lapply(.SD, function(x) cbind(substr(x, 1, 1), substr(x, 3, 3)))]
+  gc()
+  res <- res[, lapply(.SD, as.numeric)]
+  colnames(res) <- paste(rep(header, each = 2), 1:2, sep = "_")
+  colnames(meta) <- c("chr", "position")
 
   # fix things where the 1 is a minor.
   # not really a problem, just makes every - allele effect essentially a + and vice versa, but cleaner this way.
   min_flip <- which(rowMeans(res, na.rm = T) > 0.5)
-  res[min_flip,] <- ifelse(res[min_flip,] == 0, 1, 0)
+  data.table::set(res, min_flip, 1:ncol(res), value = as.data.table(ifelse(res[min_flip,] == 0, 1, 0)))
 
   if(filter_non_poly){
     np <- which(rowSums(res, na.rm = T) == 0)
