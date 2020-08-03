@@ -19,6 +19,7 @@ Depends:
 Imports:
     AGHmatrix,
     BGLR,
+    bigstatsr,
     compiler,
     doSNOW,
     dplyr,
@@ -26,6 +27,7 @@ Imports:
     forestError,
     ggplot2,
     GMMAT,
+    hexbin,
     inline,
     matrixStats,
     mgcv,

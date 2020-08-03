@@ -6,8 +6,8 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                                                    scale = function(x) rbeta(x, 1, 3)*100),
                     h_dist = function(x) rep(.5, x),
                     # burnin = burnin, thin = thin, chain_length = chain_length, method = "BayesB",
-                    par = F, joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
-                    peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50){
+                    par = 1, joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
+                    peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, phased = F, maf = 0.05){
 
   #============schem functions for one simulation=============
   # gp <- function(x, pi, df, scale, method, t_iter, h, windows, center = center){
@@ -24,9 +24,9 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
   #   return(list(stats = stats, e = pseudo$e))
   # }
   gwas <- function(x, effect_distribution, parameters, h, center = center,
-                   t_iter, G, windows){
+                   t_iter, G, windows, phased = F){
 
-    pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center)
+    pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center, phased = phased)
 
     pseudo_pi <- pred(x, phenotypes = pseudo$p,
                       prediction.program = "GMMAT",
@@ -38,13 +38,13 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
   }
 
   loop_func <- function(x, effect_distribution, parameters, scheme,
-                        t_iter, G = NULL, h, windows, center = center){
+                        t_iter, G = NULL, h, windows, center = center, phased = F){
     # if(scheme == "gp"){
     #   dist <- gp(x, pi, df, scale, method, t_iter, h, windows, center = center)
     # }
     if(scheme == "gwas"){
       dist <- gwas(x, effect_distribution, parameters = parameters, h = h, center = center,
-                   t_iter = t_iter, windows = windows, G = G)
+                   t_iter = t_iter, windows = windows, G = G, phased = phased)
     }
     return(dist)
   }
@@ -72,13 +72,7 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
 
   # can pass a g matrix forward once if doing gwas
   if(scheme == "gwas"){
-    ind.genos <- convert_2_to_1_column(x)
-    colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
-    rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
-
-    G <- AGHmatrix::Gmatrix(ind.genos, missingValue = -18, method = "Yang", maf = 0.05)
-    colnames(G) <- rownames(ind.genos)
-    rownames(G) <- rownames(ind.genos)
+    G <- make_G(x, maf, phased, par)
   }
   else{
     G <- NULL
@@ -95,13 +89,13 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
 
   # run the simulations
   ## serial
-  if(par == F){
+  if(par == F | par == 1){
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
       dist_output[i,] <- loop_func(x, effect_distribution,
                                    parameters = as.list(run_parameters[i,,drop = F]),
                                    scheme = scheme,
-                                   t_iter = i, G = G, h = h[i], windows = windows, center = center)
+                                   t_iter = i, G = G, h = h[i], windows = windows, center = center, phased = phased)
     }
     ret <- cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output))
     if(!is.list(ret)){
@@ -144,7 +138,7 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                                                       parameters = as.list(parm_chunk[i,,drop = F]),
                                                       scheme = scheme,
                                                       t_iter = paste0(q, "_", i), G = G, h = h_chunk[i],
-                                                      windows = windows, center = center), silent = T)
+                                                      windows = windows, center = center, phased = phased), silent = T)
                                    if(class(b) == "try-error"){
                                      is.err <- c(is.err, i)
                                      errs <- c(errs, b)

@@ -32,11 +32,11 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                                                   scale = function(x) rbeta(x, 1, 3)*100),
                                    h_dist = function(x) rep(.5, x),
                                    center = T,
-                                   par = F){
+                                   par = F, phased = F){
 
   #============ABC_scheme function for one rep=============
-  scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center){
-    pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center)
+  scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center, phased = F){
+    pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center, phased = phased)
     dist <- compare_distributions(phenotypes, pseudo$p)
     return(dist)
   }
@@ -73,7 +73,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                   effect_distribution = effect_distribution,
                                   parameters = as.list(run_parameters[i,,drop = F]),
                                   h = h[i],
-                                  center = center)
+                                  center = center,
+                                  phased = phased)
     }
     return(cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)))
   }
@@ -94,7 +95,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
     opts <- list(progress=progress)
 
     output <- foreach::foreach(q = 1:par, .inorder = FALSE, .errorhandling = "pass",
-                               .options.snow = opts, .packages = c("data.table", "GeneArchEst")
+                               .options.snow = opts, .packages = c("data.table", "GeneArchEst", "bigstatsr")
                                ) %dopar% {
 
                                  parm_chunk <- chunks$parm[[q]]
@@ -110,7 +111,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                                      effect_distribution = effect_distribution,
                                                      parameters = as.list(parm_chunk[i,,drop = F]),
                                                      h = h_chunk[i],
-                                                     center = center), silent = T)
+                                                     center = center,
+                                                     phased = phased), silent = T)
                                    if(class(b) == "try-error"){
                                      is.err <- c(is.err, i)
                                      errs <- c(errs, b)

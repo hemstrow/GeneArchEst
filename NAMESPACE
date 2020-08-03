@@ -2,6 +2,7 @@
 
 export(ABC_on_hyperparameters)
 export(assess_imputation)
+export(clean_phenotypes)
 export(estim_h)
 export(findpeaks_multi)
 export(fixed_number_flat)

@@ -321,7 +321,12 @@ src <- '
 
 #' @export
 weighted.colSums <- function(data, weights){
-  return(crossprod(data, weights))
+  if(class(data) == "FBM"){
+    return(bigstatsr::big_cprodVec(data, weights))
+  }
+  else{
+    return(crossprod(data, weights))
+  }
 }
 # weighted.colSums <- inline::cxxfunction(
 #   signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
@@ -346,10 +351,13 @@ e.dist.func <- function(A1, hist.a.var, h, standardize = F){
 
 #get phenotypic values given genotypes, effect sizes, and heritabilities. If hist.a.var is true, uses the amount of genomic variability this gen and h to figure out how big of an env effect to add. Otherwise uses the provided value (probably that in the first generation).
 #' @export
-get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize = FALSE){
+get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize = FALSE, phased = F){
   #get effect of each individual:
-  a <- weighted.colSums(as.matrix(x), effect.sizes) # faster than t(x)%*%effect.sizes!
-  a.ind <- a[seq(1, length(a), by = 2)] + a[seq(2, length(a), by = 2)] #add across both gene copies.
+  a.ind <- weighted.colSums(x, effect.sizes) # faster than t(x)%*%effect.sizes!
+  if(phased){
+    a.ind <- a.ind[seq(1, length(a.ind), by = 2)] + a.ind[seq(2, length(a.ind), by = 2)] #add across both gene copies.
+
+  }
 
   # make sure h isn't 0, less than 0, or 1
   if(h <= 0){
@@ -649,14 +657,21 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
 #' @export
 process_vcf <- function(file, phased = T, filter_non_poly = T){
   # read in and parse
-  #res <- data.table::fread(cmd = paste("grep -v ##", file, " | tr '|' '\t")) # doesn't work on windows because it refuses to escape the pipe
-  res <- data.table::fread(cmd = paste("grep -v ##", file))
+  if(Sys.info()[1] != "Windows"){
+    res <- data.table::fread(cmd = paste("grep -v ##", file, "| tr '|' '\t'"), sep = "\t") # doesn't work on windows because it refuses to escape the pipe
+  }
+  else{
+    newname <- paste0(file, ".sep")
+    system(paste("grep -v ##", file, "| tr '|' '\t' >", newname))
+    file <- newname
+    res <- data.table::fread(file, sep = "\t", header = T)
+  }
   header <- colnames(res)[-c(1:9)]
   meta <- res[,1:2]
   res <- res[,-c(1:9)]
   res <- res[, lapply(.SD, function(x) cbind(substr(x, 1, 1), substr(x, 3, 3)))]
   gc()
-  res <- res[, lapply(.SD, as.numeric)]
+  res <- res[, lapply(.SD, as.integer)]
   colnames(res) <- paste(rep(header, each = 2), 1:2, sep = "_")
   colnames(meta) <- c("chr", "position")
 
@@ -771,3 +786,79 @@ clean_phenotypes <- function(genotypes, phenos){
 
   return(list(genotypes = genotypes, phenos = phenos))
 }
+
+#' Make a G matrix
+#'
+#' Make a G matrix using the Yang et al (2010) method from genotypes.
+make_G <- function(ind.genos, maf = 0.05, phased = F, par = 1){
+  if(phased){
+    ind.genos <- convert_2_to_1_column(ind.genos)
+  }
+  else{
+    if(class(ind.genos) == "FBM"){
+      ind.genos <- bigstatsr::big_transpose(ind.genos)
+    }
+    else{
+      ind.genos <- t(ind.genos)
+    }
+  }
+
+  if(class(ind.genos) == "FBM"){
+    return(make_yang_G_FBM(ind.genos, maf, par))
+  }
+
+  else{
+    colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
+    rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
+    mig <- min(ind.genos)
+    G <- AGHmatrix::Gmatrix(ind.genos, missingValue = ifelse(mig == 0, NA, mig), method = "Yang", maf = maf)
+    colnames(G) <- rownames(ind.genos)
+    rownames(G) <- rownames(ind.genos)
+  }
+}
+
+
+#' Yang method G matrix from a SNP big matrix
+#'
+#' Make a G matrix using the method of Yang et al (2010) from a bigstatsr
+#' FBM (File-Backed Matrix). Uses code adapted from the AGH matrix package.
+#' Slower than simple vectorized code or the AGHmatrix function, but runs
+#' on huge genotype files in parallel without using huge amounts of memory.
+make_yang_G_FBM <- function(SNPmatrix, maf = 0.05, par = 1){
+
+  Frequency <- bigstatsr::big_colstats(SNPmatrix)$sum/(2*nrow(SNPmatrix))
+  Frequency <- cbind(1 - Frequency, Frequency)
+  Frequency <- cbind(Frequency, matrixStats::rowMins(Frequency))
+
+  if(maf != 0){
+    rm <- which(Frequency[,3] <= maf)
+    if(length(rm) > 0){
+      SNPmatrix <- bigstatsr::FBM(nrow = nrow(SNPmatrix), ncol = ncol(SNPmatrix), type = "integer",
+                                  SNPmatrix[,-rm])
+      Frequency <- Frequency[-rm, -3]
+    }
+  }
+
+  FreqP <- bigstatsr::FBM(nrow(SNPmatrix), ncol(SNPmatrix), init =
+                            rep(Frequency[, 2], each = nrow(SNPmatrix)))
+  FreqPQ <- bigstatsr::FBM(nrow(SNPmatrix), ncol(SNPmatrix),
+                           init = rep(2 * Frequency[, 1] * Frequency[,2], each = nrow(SNPmatrix)))
+  G.all <- bigstatsr::FBM(nrow(SNPmatrix), ncol(SNPmatrix), init =
+                            bigstatsr::big_apply(SNPmatrix, a.FUN = function(X, ind)
+                              (X[,ind]^2 - (1 + 2 * FreqP[,ind]) * SNPmatrix[,ind] + 2 * (FreqP[,ind]^2))/FreqPQ[,ind],
+                              a.combine = cbind, ncores = par))
+
+  G.ii <- as.matrix(bigstatsr::big_colstats(bigstatsr::big_transpose(G.all))$sum)
+  SNPmatrix <- bigstatsr::FBM(nrow(SNPmatrix), ncol(SNPmatrix), init =
+                                bigstatsr::big_apply(SNPmatrix, a.FUN = function(X, ind){
+                                  y <- (SNPmatrix[,ind] - 2* FreqP[,ind])/sqrt(FreqPQ[,ind])
+                                  y[is.na(y)] <- 0
+                                  return(y)
+                                }, a.combine = cbind, par = par))
+  G.ii.hat <- 1 + (G.ii)/nloci
+  Gmatrix <- bigstatsr::big_tcrossprodSelf(SNPmatrix)[1:nrow(SNPmatrix), 1:nrow(SNPmatrix)]/nloci
+  diag(Gmatrix) <- G.ii.hat
+  return(Gmatrix)
+}
+
+
