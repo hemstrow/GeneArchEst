@@ -13,7 +13,8 @@ ABC_on_hyperparameters(
     runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3) * 100),
   h_dist = function(x) rep(0.5, x),
   center = T,
-  par = F
+  par = F,
+  phased = F
 )
 }
 \arguments{

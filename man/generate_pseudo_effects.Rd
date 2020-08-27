@@ -4,7 +4,14 @@
 \alias{generate_pseudo_effects}
 \title{generate psuedo effects using passed parameters, an effect size distribution, and heritability.}
 \usage{
-generate_pseudo_effects(x, effect_distribution, parameters, h, center = T)
+generate_pseudo_effects(
+  x,
+  effect_distribution,
+  parameters,
+  h,
+  center = T,
+  phased = F
+)
 }
 \description{
 generate psuedo effects using passed parameters, an effect size distribution, and heritability.

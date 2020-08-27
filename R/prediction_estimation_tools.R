@@ -31,7 +31,8 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  h = NULL,
                  standardize = FALSE,
                  center = FALSE,
-                 save.meta = TRUE, par = NULL, pi = NULL, pass_G = NULL, verbose = T){
+                 save.meta = TRUE, par = NULL, pi = NULL, pass_G = NULL, phased = F,
+                 verbose = T){
   #============sanity checks================================
   # check that all of the required arguments are provided for the prediction.model we are running
   if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger", "GMMAT")){
@@ -246,9 +247,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
 
     if(is.null(pass_G)){
-      G <- AGHmatrix::Gmatrix(ind.genos, missingValue = NA, method = "Yang", maf = 0.05)
-      colnames(G) <- rownames(ind.genos)
-      rownames(G) <- rownames(ind.genos)
+      G <- make_G(ind.genos, maf.filt, phased, par)
     }
     else{
       G <- pass_G
@@ -396,3 +395,81 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                 prediction.model = prediction.model, kept.snps = kept.snps))
   }
 }
+
+pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT_infile = NULL,
+                          phased = F, par = 1, center = T){
+  #============transpose==================
+  if(!is.null(x)){
+    if(phased == T){
+      xt <- convert_2_to_1_column(x)
+    }
+    else{
+      xt <- bigstatsr::big_transpose(x)
+    }
+  }
+
+  #============G prep or import===========
+  if(is.null(pass_G)){
+    G <- make_G(xt, maf, phased, par)
+  }
+  else{
+    G <- pass_G
+    rm(pass_G)
+  }
+  #============center phenotypes==========
+  if(center){
+    phenotypes <- phenotypes - mean(phenotypes)
+  }
+
+  #============prep gmmat infile or import=========
+  if(is.null(GMMAT_infile)){
+    if(!is.null(maf)){
+      if(maf > 0){
+        Frequency <- bigstatsr::big_colstats(xt)$sum/(2*nrow(xt))
+        Frequency <- cbind(1 - Frequency, Frequency)
+        Frequency <- cbind(Frequency, matrixStats::rowMins(Frequency))
+
+        to.rm <- which(Frequency[,3] <= maf)
+        if(length(to.rm) > 0){
+          xt <- bigstatsr::FBM(nrow = nrow(xt), ncol = ncol(xt), type = "integer",
+                                      xt[,-to.rm])
+        }
+        rm(Frequency)
+      }
+    }
+
+    bigstatsr::big_write(xt, file = "asso_in.txt", sep = "\t")
+    GMMAT_infile <- "asso_in.txt"
+  }
+
+  #=========================run association==========
+  if(length(unique(phenotypes)) > 2){
+    family <- gaussian(link = "identity")
+  }
+  else if(length(unique(phenotypes)) == 2){
+    family <- binomial(link = "logit")
+  }
+
+  # run null model
+  mod <- GMMAT::glmmkin(fixed = "phenotypes ~ 1",
+                        data = data.frame(phenotypes = phenotypes, sampleID = 1:length(phenotypes)),
+                        kins = G,
+                        id = "sampleID",
+                        family = family, method.optim = "Brent")
+
+  # run the GWAS
+  outfile <- paste0(GMMAT_infile, ".out")
+  score.out <- GMMAT::glmm.score(obj = mod,
+                                 infile = GMMAT_infile,
+                                 outfile = outfile,
+                                 infile.nrow.skip = 0,
+                                 infile.ncol.skip = 0, infile.header.print = NULL)
+  score.out <- read.table(outfile, header = T, stringsAsFactors = F)
+
+  # return
+  return(list(e.eff = score.out))
+}
+
+
+
+

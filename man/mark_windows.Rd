@@ -2,7 +2,7 @@
 % Please edit documentation in R/distribution_description.R
 \name{mark_windows}
 \alias{mark_windows}
-\title{Marks unique windows for each snp.}
+\title{Mark windows for snps.}
 \usage{
 mark_windows(x, sigma, chr = "chr")
 }
@@ -14,5 +14,5 @@ mark_windows(x, sigma, chr = "chr")
 \item{chr}{character, default "chr". Name of chromosome info column in x.}
 }
 \description{
-Marks unique windows for each snp.
+Determine which unique genomic window each snp belongs to.
 }

@@ -1,7 +1,12 @@
-#' Marks unique windows for each snp.
+#' Mark windows for snps.
+#'
+#' Determine which unique genomic window each snp belongs to.
+#'
 #' @param x data.frame. Must contain a "position" column and a chromosome info column.
 #' @param sigma numeric. Size of windows, in kb.
 #' @param chr character, default "chr". Name of chromosome info column in x.
+#'
+#' @export
 mark_windows <- function(x, sigma, chr = "chr"){
   sigma <- sigma * 1000
 
@@ -21,15 +26,37 @@ mark_windows <- function(x, sigma, chr = "chr"){
   # for each chr, assign windows to all snps
   ## function per chr
   assign_windows <- function(y, starts, ends){
-    lmat <- outer(y$position, starts, function(pos, starts) pos > starts)
-    lmat <- lmat * outer(y$position, ends, function(pos, ends) pos <= ends)
-    lmat[lmat == 1] <- rep(1:ncol(lmat), each = nrow(lmat))[lmat == 1]
-    if(any(colSums(lmat) == 0)){
-      warning("Colsums are 0.")
+    comp_fun <- function(y, starts, ends){
+      lmat <- outer(y, starts, function(pos, starts) pos > starts)
+      lmat <- lmat * outer(y, ends, function(pos, ends) pos <= ends)
+      lmat[lmat == 1] <- rep(1:ncol(lmat), each = nrow(lmat))[lmat == 1]
+      # if(any(colSums(lmat) == 0)){
+      #   warning("Colsums are 0.")
+      # }
+      lmat <- as.numeric(lmat[lmat != 0])
+      return(lmat)
     }
-    lmat <- as.numeric(lmat[lmat != 0])
+
+    # if really large, will need to iterate through in chunks, solve, and then save results
+    if(nrow(y) > 500000){
+      n_iters <- ceiling(nrow(y)/500000)
+      titer <- 1
+      lmat <- integer(nrow(y))
+      for(i in 1:n_iters){
+        end <- i*500000
+        end <- ifelse(end > nrow(y), nrow(y), end)
+        trows <- titer:end
+        lmat[trows] <- comp_fun(y$position[trows], starts, ends)
+        titer <- i*500000 + 1
+      }
+    }
+    else{
+      lmat <- comp_fun(y$position, starts, ends)
+    }
     return(lmat)
   }
+
+
   ## note: need to make sure that the window ids are unique!
   windows <- vector("list", length(unique.chr))
   tot.windows <- 0

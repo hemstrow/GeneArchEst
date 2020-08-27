@@ -386,10 +386,20 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
 
 #converts 2 column to 1 column genotypes and transposes
 convert_2_to_1_column <- function(x){
-  if(!is.matrix(x)){x <- as.matrix(x)}
-  ind.genos <- x[,seq(1,ncol(x), by = 2)] + x[,seq(2,ncol(x), by = 2)]
-  ind.genos <- matrix(ind.genos, nrow = ncol(x)/2, byrow = T) # rematrix and transpose!
-  return(ind.genos)
+  if(class(x) == "FBM"){
+    x1 <- bigstatsr::FBM(nrow(x), ncol(x)/2, init =
+                           x[,seq(1, ncol(x), by = 2)])
+    x2 <- bigstatsr::FBM(nrow(x), ncol(x)/2, init =
+                           x[,seq(2, ncol(x), by = 2)])
+    x <- bigstatsr::big_apply(x1, a.FUN = function(x, inds) x1[,inds] + x2[,inds])
+    return(bigstatsr::big_transpose(x))
+  }
+  else{
+    if(!is.matrix(x)){x <- as.matrix(x)}
+    ind.genos <- x[,seq(1,ncol(x), by = 2)] + x[,seq(2,ncol(x), by = 2)]
+    ind.genos <- matrix(ind.genos, nrow = ncol(x)/2, byrow = T) # rematrix and transpose!
+    return(ind.genos)
+  }
 }
 
 #' Make bed files from genotype/phenotype data
@@ -473,7 +483,7 @@ make_bed <- function(x, meta, phenos, plink_path = "/usr/bin/plink.exe", return_
 
   # use plink to make a .bed file. Too much of a pain in the butt to write binary with R.
   cat("Smoothing out wrinkles (using PLINK to make a .bed file)...\n\n")
-  system(paste0(plink_path, " --file data --make-bed --out data --allow-no-sex"))
+  system(paste0(plink_path, " --file data --make-bed --out data --allow-no-sex --aec"))
   cat("All done! Looks nice and cozy.\n\n")
 
   # name output
@@ -790,6 +800,7 @@ clean_phenotypes <- function(genotypes, phenos){
 #' Make a G matrix
 #'
 #' Make a G matrix using the Yang et al (2010) method from genotypes.
+#' @export
 make_G <- function(ind.genos, maf = 0.05, phased = F, par = 1){
   if(phased){
     ind.genos <- convert_2_to_1_column(ind.genos)
@@ -814,6 +825,7 @@ make_G <- function(ind.genos, maf = 0.05, phased = F, par = 1){
     G <- AGHmatrix::Gmatrix(ind.genos, missingValue = ifelse(mig == 0, NA, mig), method = "Yang", maf = maf)
     colnames(G) <- rownames(ind.genos)
     rownames(G) <- rownames(ind.genos)
+    return(G)
   }
 }
 
@@ -824,8 +836,14 @@ make_G <- function(ind.genos, maf = 0.05, phased = F, par = 1){
 #' FBM (File-Backed Matrix). Uses code adapted from the AGH matrix package.
 #' Slower than simple vectorized code or the AGHmatrix function, but runs
 #' on huge genotype files in parallel without using huge amounts of memory.
+#'
+#' @param SNPmatrix File-backed matrix (FBM), where each row is an \emph{individual} and each
+#'   column is a \emph{loci}. Values are the intergers 0, 1, or 2, where 0 and 2 are homozygotes and 1 is
+#'   a heterozygote.
+#' @param maf numeric, default 0.05. Loci with minor allele frequencies below this will be removed.
+#' @param par numeric, default 1. Number of cores to use for calculations.
 make_yang_G_FBM <- function(SNPmatrix, maf = 0.05, par = 1){
-
+  nloci <- ncol(SNPmatrix)
   Frequency <- bigstatsr::big_colstats(SNPmatrix)$sum/(2*nrow(SNPmatrix))
   Frequency <- cbind(1 - Frequency, Frequency)
   Frequency <- cbind(Frequency, matrixStats::rowMins(Frequency))
@@ -833,11 +851,14 @@ make_yang_G_FBM <- function(SNPmatrix, maf = 0.05, par = 1){
   if(maf != 0){
     rm <- which(Frequency[,3] <= maf)
     if(length(rm) > 0){
-      SNPmatrix <- bigstatsr::FBM(nrow = nrow(SNPmatrix), ncol = ncol(SNPmatrix), type = "integer",
-                                  SNPmatrix[,-rm])
+      SNPmatrix <- bigstatsr::big_copy(SNPmatrix, ind.col = 1:ncol(SNPmatrix)[-rm], type = "integer")
       Frequency <- Frequency[-rm, -3]
     }
   }
+
+  # FBM_rep_by_parts <- function(to.rep, each, par = 1){
+  #   X <- bigstatsr::FBM(nrow(to.rep), ncol = each)
+  # }
 
   FreqP <- bigstatsr::FBM(nrow(SNPmatrix), ncol(SNPmatrix), init =
                             rep(Frequency[, 2], each = nrow(SNPmatrix)))
@@ -847,6 +868,7 @@ make_yang_G_FBM <- function(SNPmatrix, maf = 0.05, par = 1){
                             bigstatsr::big_apply(SNPmatrix, a.FUN = function(X, ind)
                               (X[,ind]^2 - (1 + 2 * FreqP[,ind]) * SNPmatrix[,ind] + 2 * (FreqP[,ind]^2))/FreqPQ[,ind],
                               a.combine = cbind, ncores = par))
+
 
   G.ii <- as.matrix(bigstatsr::big_colstats(bigstatsr::big_transpose(G.all))$sum)
   SNPmatrix <- bigstatsr::FBM(nrow(SNPmatrix), ncol(SNPmatrix), init =

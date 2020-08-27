@@ -64,7 +64,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
   #============ABC loop===================
   # run the ABC
   ## serial
-  if(par == F){
+  if(par == F | par == 1){
 
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
