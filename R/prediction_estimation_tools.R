@@ -465,7 +465,8 @@ pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT
                                  infile = GMMAT_infile,
                                  outfile = outfile,
                                  infile.nrow.skip = 0,
-                                 infile.ncol.skip = 0, infile.header.print = NULL)
+                                 infile.ncol.skip = 0, infile.header.print = NULL,
+                                 infile.ncol.print = NULL)
   score.out <- read.table(outfile, header = T, stringsAsFactors = F)
 
   # return
