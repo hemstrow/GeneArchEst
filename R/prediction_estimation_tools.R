@@ -451,6 +451,8 @@ pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT
   }
 
   # run null model
+  colnames(G) <- 1:length(phenotypes)
+  rownames(G) <- 1:length(phenotypes)
   mod <- GMMAT::glmmkin(fixed = "phenotypes ~ 1",
                         data = data.frame(phenotypes = phenotypes, sampleID = 1:length(phenotypes)),
                         kins = G,
