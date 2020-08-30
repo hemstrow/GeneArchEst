@@ -77,8 +77,6 @@ findpeaks <- function(x, delta, pcut = .005, pvals = T){
 
   if(pvals){
     lpcut <- -log10(pcut)
-    print(head(x$effect))
-    print(class(x$effect))
     x$effect <- -log10(x$effect)
     peaks <- x[x$effect >= lpcut,]
     peaks <- na.omit(peaks)
