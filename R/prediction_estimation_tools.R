@@ -460,7 +460,7 @@ pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT
                         family = family, method.optim = "Brent")
 
   # run the GWAS
-  outfile <- paste0(GMMAT_infile, ".out")
+  outfile <- paste0("GMMAT_score.out")
   score.out <- GMMAT::glmm.score(obj = mod,
                                  infile = GMMAT_infile,
                                  outfile = outfile,
