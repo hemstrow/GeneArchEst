@@ -79,13 +79,13 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
         pseudo_pi <- pred_gwas_FBM(x = NULL, maf = maf,
                                    GMMAT_infile = GMMAT_infile, pass_G = G,
                                    phenotypes = pseudo$p, center = center,
-                                   phased = phased, par = 1)
+                                   phased = phased, par = 1)$e.eff$PVAL
       }
       else{
         pseudo_pi <- pred_gwas_FBM(x = x, maf = maf,
                                    GMMAT_infile = GMMAT_infile, pass_G = G,
                                    phenotypes = pseudo$p, center = center,
-                                   phased = phased, par = 1)
+                                   phased = phased, par = 1)$e.eff$PVAL
       }
     }
     else{
