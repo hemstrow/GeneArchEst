@@ -1,11 +1,36 @@
-calc_distribution_stats <- function(x, meta, phenos, center = T, scheme = "gwas", chr = "chr",
+calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme = "gwas", chr = "chr",
                                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
-                                    burnin = NULL, thin = NULL, chain_length = NULL){
+                                    burnin = NULL, thin = NULL, chain_length = NULL, maf = 0, phased = F,
+                                    pass_windows = F, pass_G = NULL, GMMAT_infile = NULL){
   #===========functions to run gwas or gp=============
-  gwas <- function(x, phenos, meta, windows, peak_delta, peak_pcut, chr){
-    x_pi <- pred(x, phenotypes = phenos,
-                 prediction.program = "GMMAT",
-                 maf.filt = F, runID = "gmmat_real")$e.eff$PVAL
+  gwas <- function(x, phenos, meta, windows, peak_delta, peak_pcut, chr, GMMAT_infile = NULL, pass_G = NULL){
+    if(class(x) == "FBM"){
+      if(!is.null(GMMAT_infile) & !is.null(pass_G)){
+        x_pi <- pred_gwas_FBM(x = NULL, maf = maf,
+                              GMMAT_infile = GMMAT_infile, pass_G = pass_G,
+                              phenotypes = phenos, center = center,
+                              phased = phased, par = 1)$e.eff$PVAL
+      }
+      else{
+        x_pi <- pred_gwas_FBM(x = x, maf = maf,
+                              GMMAT_infile = GMMAT_infile, pass_G = pass_G,
+                              phenotypes = phenos, center = center,
+                              phased = phased, par = 1)$e.eff$PVAL
+      }
+    }
+    else if(is.null(x) & !is.null(GMMAT_infile) & !is.null(pass_G)){
+      x_pi <- pred_gwas_FBM(x = NULL, maf = maf,
+                                 GMMAT_infile = GMMAT_infile, pass_G = pass_G,
+                                 phenotypes = phenos, center = center,
+                                 phased = phased, par = 1)$e.eff$PVAL
+    }
+    else{
+      x_pi <- pred(x, phenotypes = phenos,
+                   prediction.program = "GMMAT",
+                   maf.filt = F, runID = "gmmat_real")$e.eff$PVAL
+    }
+
+
 
     stats <- dist_desc(x_pi, meta, windows, peak_delta, peak_pcut, chr, pvals = T)
     return(stats = stats)
@@ -27,10 +52,13 @@ calc_distribution_stats <- function(x, meta, phenos, center = T, scheme = "gwas"
     phenos <- phenos - mean(phenos)
   }
 
-  windows <- mark_windows(meta, window_sigma, chr)
+  if(is.null(pass_windows)){
+    windows <- mark_windows(meta, window_sigma, chr)
+
+  }
 
   if(scheme == "gwas"){
-    stats <- gwas(x, phenos, meta, windows, peak_delta, peak_pcut, chr)
+    stats <- gwas(x, phenos, meta, windows, peak_delta, peak_pcut, chr, GMMAT_infile = GMMAT_infile, pass_G = pass_G)
   }
   else{
     stats <- gp(x, phenos, meta, windows, peak_delta, peak_pcut, chr)
@@ -91,6 +119,7 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
                                          importance = "permutation", scheme = "gwas",
                                          peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
                                          quantiles = seq(0 + .001, 1 - .001, by = .001), save_rf = FALSE,
+                                         pass_windows = F, pass_G = NULL, GMMAT_infile = NULL, phased = F,
                                          ...){
   #==========rf construction, evaluation, and prediction subfunction==========
   make_and_predict_rf <- function(dat_test, dat_train, param_train, param_test, hyperparameter,
@@ -185,7 +214,9 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
   #===========get stats for the real data==========
   cat("Getting descriptive statistics for the real data...\n")
   stats <- calc_distribution_stats(x, meta, phenos, center, scheme, colnames(meta)[1],
-                                   peak_delta, peak_pcut, window_sigma)
+                                   peak_delta, peak_pcut, window_sigma, phased = phased, center = center,
+                                   chr = colnames(meta)[1],
+                                   pass_windows = pass_windows, pass_G = pass_G, GMMAT_infile = GMMAT_infile)
   cat("Done!\n")
   #===========prepare data=========
   # pull parameters to estimate and transform if requested
