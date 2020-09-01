@@ -53,7 +53,7 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                     # burnin = burnin, thin = thin, chain_length = chain_length, method = "BayesB",
                     par = 1, joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, phased = F, maf = 0.05,
-                    pass_windows = F, pass_G = NULL, GMMAT_infile = NULL){
+                    pass_windows = NULL, pass_G = NULL, GMMAT_infile = NULL){
 
   #============schem functions for one simulation=============
   # gp <- function(x, pi, df, scale, method, t_iter, h, windows, center = center){
@@ -74,29 +74,12 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
 
     pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center, phased = phased)
 
-    if(class(x) == "FBM"){
-      if(!is.null(GMMAT_infile) & !is.null(pass_G)){
-        pseudo_pi <- pred_gwas_FBM(x = NULL, maf = maf,
-                                   GMMAT_infile = GMMAT_infile, pass_G = G,
-                                   phenotypes = pseudo$p, center = center,
-                                   phased = phased, par = 1)$e.eff$PVAL
-      }
-      else{
-        pseudo_pi <- pred_gwas_FBM(x = x, maf = maf,
-                                   GMMAT_infile = GMMAT_infile, pass_G = G,
-                                   phenotypes = pseudo$p, center = center,
-                                   phased = phased, par = 1)$e.eff$PVAL
-      }
-    }
-    else{
-      pseudo_pi <- pred(x, phenotypes = pseudo$p,
-                        prediction.program = "GMMAT",
-                        maf.filt = F, runID = paste0(t_iter, "_gmmat"),
-                        pass_G = G)$e.eff$PVAL
-    }
+    stats <- calc_distribution_stats(x = x, meta = meta, phenos = pseudo$p, center = center,
+                                         scheme = "gwas", chr = colnames(meta)[1],
+                                         peak_delta = peak_delta, peak_pcut = peak_pcut, window_sigma = window_sigma,
+                                         burnin = NULL, thin = NULL, chain_length = NULL, maf = maf, phased = phased,
+                                         pass_windows = windows, pass_G = G, GMMAT_infile = GMMAT_infile)
 
-
-    stats <- dist_desc(pseudo_pi, meta, windows, peak_delta, peak_pcut, colnames(meta)[1], pvals = T)
     return(stats)
   }
 
