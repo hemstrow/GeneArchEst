@@ -24,6 +24,10 @@ hyperparameter_random_forest(
   window_sigma = 50,
   quantiles = seq(0 + 0.001, 1 - 0.001, by = 0.001),
   save_rf = FALSE,
+  pass_windows = F,
+  pass_G = NULL,
+  GMMAT_infile = NULL,
+  phased = F,
   ...
 )
 }
