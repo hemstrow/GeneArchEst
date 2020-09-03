@@ -54,7 +54,10 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
 
   if(is.null(pass_windows)){
     windows <- mark_windows(meta, window_sigma, chr)
-
+  }
+  else{
+    windows <- pass_windows
+    rm(pass_windows)
   }
 
   if(scheme == "gwas"){
@@ -213,9 +216,9 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
 
   #===========get stats for the real data==========
   cat("Getting descriptive statistics for the real data...\n")
-  stats <- calc_distribution_stats(x, meta, phenos, center, scheme, colnames(meta)[1],
-                                   peak_delta, peak_pcut, window_sigma, phased = phased, center = center,
+  stats <- calc_distribution_stats(x = x, meta = meta, phenos = phenos, center = center, scheme = scheme,
                                    chr = colnames(meta)[1],
+                                   peak_delta, peak_pcut, window_sigma, phased = phased,
                                    pass_windows = pass_windows, pass_G = pass_G, GMMAT_infile = GMMAT_infile)
   cat("Done!\n")
   #===========prepare data=========
@@ -234,9 +237,8 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
   # check for NAs in the stats, if any then remove those collumns from the data
   na.stats <- which(is.na(stats))
   if(length(na.stats) > 0){
-    stats <- x[-na.stats]
+    stats <- stats[-na.stats]
     sims <- sims[,-na.stats]
-    predict_params[,-na.stats]
   }
 
   # remove nas
