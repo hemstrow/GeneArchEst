@@ -6,7 +6,7 @@ Authors@R: c(person("William", "Hemstrom", email = "hemstrow@gmail.com",
   role = c("aut", "cre")))
 Description: This package uses Approximate Bayesian Computation (ABC) and machine learning
     in order to estimate the genomic architecture that underlies quantitative traits. It also
-    contains functionsto simulate demography under the most likely architectures.
+    contains functions to simulate demography under the most likely architectures.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
@@ -16,6 +16,7 @@ Depends:
     doParallel,
     foreach,
     GenKern
+biocViews:
 Imports:
     AGHmatrix,
     BGLR,
