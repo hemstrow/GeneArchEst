@@ -36,5 +36,4 @@ Imports:
     ranger,
     reshape2,
     rvest,
-    biocViews:seqvartools,
     snow
