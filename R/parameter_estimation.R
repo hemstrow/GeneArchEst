@@ -94,11 +94,11 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
 #'   returns the number of variables to possibly split at each node during random forest. For example, function(columns) columns/2 would have an mtry
 #'   equal to half the number of summary statistics. See \code{\link[ranger]{ranger}} for details about mtry.
 #' @param num_threads numeric, default NULL. Number of processing threads to use for tree growth and cross-evaluation.
-#' @param parameter_transforms. Named list of parameter transformations or NULL, default list(pi = function(pi) log10(1 - pi)).
+#' @param parameter_transforms. Named list of parameter transformation functions or NULL, default the \code{\link{reasonable_transform}} for the named hyperparameter.
 #'   Transformations to use on any estimated parameters. Any estimated hyperparameters with names matching those
 #'   in this list will be transformed as given. Usefull if pi or other hyperparameter values in simulations
 #'   are heavily skewed, as is often likely.
-#' @param parameter_back_transforms. Named list of parameter back transformations or NULL, default ist(pi = function(pi) 1 - 10^pi ).
+#' @param parameter_back_transforms. Named list of parameter back transformation functions or NULL, default \code{\link{reasonable_transform}} for the named hyperparameter.
 #'   Back transformations to use on any estimated parameters. Any estimated hyperparameters with names matching those
 #'   in this list will be back_transformed as given prior to being returned.
 #' @param importance character, default "permutation". Determines how variable importance is computed, if it is at all. See \code{\link[ranger]{ranger}}
@@ -117,8 +117,8 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
 hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_to_estimate = c("pi"),
                                          center = T, hold_percent = .25, num_trees = 1000,
                                          mtry = function(columns) columns, num_threads = NULL,
-                                         parameter_transforms = list(pi = function(pi) log10(1 - pi)),
-                                         parameter_back_transforms = list(pi = function(pi) 1 - 10^pi ),
+                                         parameter_transforms = reasonable_transform(hyperparameter_to_estimate)$forward,
+                                         parameter_back_transforms = reasonable_transform(hyperparameter_to_estimate)$back,
                                          importance = "permutation", scheme = "gwas",
                                          peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
                                          quantiles = seq(0 + .001, 1 - .001, by = .001), save_rf = FALSE,
@@ -297,10 +297,8 @@ hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, 
                                              regression_method = "rf",
                                              num_trees = 10000,
                                              num_threads = NULL,
-                                             parameter_transforms = list(pi = function(pi) log10(1 - pi),
-                                                                         scale = function(scale) log10(scale)),
-                                             parameter_back_transforms = list(pi = function(pi) 1 - 10^pi,
-                                                                              scale = function(scale) 10^scale),
+                                             parameter_transforms = reasonable_transform(c("scale", "pi"))$forward,
+                                             parameter_back_transforms = reasonable_transform(c("scale", "pi"))$back,
                                              acceptance_threshold = .005, dist_var = "ks",
                                              hold_percent = .25,
                                              quantiles = seq(0 + .001, 1 - .001, by = .001),

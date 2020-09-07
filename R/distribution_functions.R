@@ -91,4 +91,53 @@ rflat_fixed <- function(n, sites, scale){
 }
 
 
+#' Reasonable parameter transformations
+#'
+#' Produce reasonable linear transformations for any provided parameters from a
+#' bank of tested transformation functions. If no tested transforms exist, returns
+#' the \code{\link{identity} function.
+#'
+#' @param parameters character, default c("pi", "scale"). Parameters for which to fetch reasonable transformation functions.
+#'
+#' @return A nested, named list containing forward and back transforms for the named parameters.
+#'
+#' @export
+#'
+#' @examples
+#' # for pi
+#' reasonable_transform("pi")
+#'
+#' # for pi and scale
+#' reasonable_transform(c("pi", "scale"))
+#'
+#' # when there aren't any banked transformations, returns the identity function
+#' reasonable_transform(c("pi", "not_a_parameter", "scale"))
+reasonable_transform <- function(parameters = c("pi", "scale")){
+  #===========bank of often reasonable transforms===
+  # forward transforms
+  forwards <- list(pi = function(pi) log10(1 - pi),
+                   scale = function(scale) log10(scale))
 
+  # back transforms
+  back <- list(pi = function(pi) 1 - 10^pi,
+               scale = function(scale) 10^scale)
+
+
+
+  #===========get the selected transforms============
+  # initialize
+  st <- vector("list", 2)
+  names(st) <- c("forwards", "back")
+  for(i in 1:length(st)){
+    st[[i]] <- vector("list", length(parameters))
+    names(st[[i]]) <- parameters
+  }
+
+  # return the banked transform if possible, otherwise return an identity function
+  for(i in parameters){
+    st[[1]][[i]] <- ifelse(i %in% names(forwards), forwards[[i]], identity)
+    st[[2]][[i]] <- ifelse(i %in% names(back), back[[i]], identity)
+  }
+
+  return(st)
+}
