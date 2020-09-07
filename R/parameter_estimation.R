@@ -307,6 +307,7 @@ hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, 
                                              independent_quantiles = seq(0 + .001, 1 - .001, by = .001)){
 
   #==================grab the accepted runs============
+  ABC <- as.data.frame(ABC)
   hits <- which(ABC[,dist_var] <= quantile(ABC[,dist_var], acceptance_threshold, na.rm = T))
   ABC <- ABC[hits,]
 
@@ -444,7 +445,7 @@ hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, 
     }
   }
 
-  #===========clean, plot, and return====================
+  #===========clean, prepare plot data, and return====================
   # working point
   cat("Cleaning and preparing summary plot...\n")
   # get the probs for the quantiles
@@ -461,7 +462,7 @@ hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, 
   colnames(qm)[which(colnames(qm) %in% c("variable", "value"))] <- c("dependent_quantile", "dependent")
   colnames(qm)[which(colnames(qm) %in% independent)] <- paste0("independent_", 1:length(independent))
 
-  # fix scale quantiles, get joint quantile, and plot
+  # fix scale quantiles, get joint quantile
   probs <- qm[,"dependent_quantile"]
   probs[probs > 0.5] <- 1 - probs[probs > 0.5]
   qm[,"dependent_quantile"] <- probs
@@ -487,31 +488,17 @@ hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, 
 
 
 
-  ## plot
-  obj.keep.list <- c("pdat", "qm", "path", "intervals", "independent", "dependent", "ret_quants")
-  env.objs <- ls()
-  rm.obs <- env.objs[-which(env.objs %in% obj.keep.list)]
-  rm(rm.obs)
-  cat("Plotting 95% confidence intervals for test values for fit evaluation of", dependent, ".\n")
-
-  dep_conf_plot <- ggplot2::ggplot(pdat, ggplot2::aes(x = indep, y = dep)) + ggplot2::geom_point() +
-    ggplot2::geom_ribbon(ggplot2::aes(ymin = pred + clow, ymax = pred + chigh), alpha = 0.5) + ggplot2::theme_bw() +
-    ggplot2::xlab(independent[1]) + ggplot2::ylab(dependent)
-  print(dep_conf_plot)
-
-
-  cat("Plotting esitmates. Red polygon represents 95% prediction limits of independent variable along y axis, and 95% prediction limits for each of those independent varibale values along the y axis.\n")
-  tp <- ggplot2::ggplot(data = qm, ggplot2::aes(x = independent_1, y = dependent, z = norm_joint_quantile)) + ggplot2::stat_summary_hex(bins = 100) +
-    ggplot2::scale_fill_viridis_c() + ggplot2::scale_color_viridis_c() + ggplot2::theme_bw() +
-    ggplot2::geom_polygon(data = path, ggplot2::aes(x = independent_1, y = dependent), color = "red", fill = NA, size = 1) +
-    ggplot2::xlab(independent[1]) + ggplot2::ylab(dependent) + ggplot2::labs(fill = "Average joint probability")
-
-  print(tp)
-
+  ## return
   ret_quants <- cbind(intervals[,independent], predictions)
   colnames(ret_quants)[1:length(independent)] <- independent
+
   return(list(optimal_fits = intervals[,c(independent, paste0("pred_", dependent))],
               quantiles = ret_quants,
-              cross_val_fit_plot = dep_conf_plot,
-              joint_quantile_plot = tp))
+              cross_val_data = pdat,
+              joint_quantile_long = qm,
+              #cross_val_fit_plot = dep_conf_plot,
+              #joint_quantile_plot = tp,
+              independent = independent,
+              dependent = dependent,
+              ci_path = path))
 }
