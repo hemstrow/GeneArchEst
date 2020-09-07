@@ -167,6 +167,7 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
     cat("Creating diagnostic plot...\n")
     print(cv.plot)
     cat("Done!\n")
+    cv.plot$plot_env <- rlang::new_environment() # stops a saved RDS of the function result from containing the rf!
 
     #===========esitmate pi================
     cat("Estimating", hyperparameter, "...\n")
