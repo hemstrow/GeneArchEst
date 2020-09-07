@@ -160,14 +160,6 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
 
     cat("Complete!\nr^2 of predictions vs true", paste0(hyperparameter, ":"), cor(pe$estimates$pred, pe$estimates$real)^2, "\n")
 
-    # make a diagnostic plot
-    cv.plot <- ggplot2::ggplot(pe$estimates, ggplot2::aes(x = real, y = pred)) +
-      ggplot2::theme_bw() + ggplot2::geom_point() +
-      ggplot2::geom_ribbon(ggplot2::aes(ymin = lower_0.05, ymax = upper_0.05, x = pred), fill = "grey", alpha = 0.5)
-    cat("Creating diagnostic plot...\n")
-    print(cv.plot)
-    cat("Done!\n")
-    cv.plot$plot_env <- rlang::new_environment() # stops a saved RDS of the function result from containing the rf!
 
     #===========esitmate pi================
     cat("Estimating", hyperparameter, "...\n")
@@ -187,8 +179,7 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
 
 
     return(list(rf = ifelse(save_rf, rf, FALSE), cross_validation = pe$estimates, point_estimate = pe2$estimates[1,], parameter_density = ed,
-                descriptive_stats = stats,
-                cross_val_plot = cv.plot))
+                descriptive_stats = stats))
   }
 
 
