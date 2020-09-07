@@ -421,13 +421,7 @@ hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, 
   pdat <- intervals[,c(dependent, independent[1], "clow", "chigh", paste0("pred_", dependent))]
   colnames(pdat)[1:2] <- c("dep", "indep")
   colnames(pdat)[5] <- "pred"
-  dep_conf_plot <- ggplot2::ggplot(pdat, ggplot2::aes(x = indep, y = dep)) + ggplot2::geom_point() +
-    ggplot2::geom_ribbon(ggplot2::aes(ymin = pred + clow, ymax = pred + chigh), alpha = 0.5) + ggplot2::theme_bw() +
-    ggplot2::xlab(independent[1]) + ggplot2::ylab(dependent)
 
-
-  cat("Plotting 95% confidence intervals for test values for fit evaluation of", dependent, ".\n")
-  print(dep_conf_plot)
 
   # with real data
   intervals <- get_conf_int(gs, input_independent_parameters, quantiles, round = "prediction")
@@ -490,13 +484,28 @@ hyperparameter_regression_on_ABC <- function(ABC, input_independent_parameters, 
   path$order <- 1:nrow(path)
   path <- path[c(which(path$variable == "lower"), rev(path$order[path$variable == "upper"])),]
   path$norm_joint_quantile <- NA
+
+
+
   ## plot
+  obj.keep.list <- c("pdat", "qm", "path", "intervals", "independent", "dependent", "ret_quants")
+  env.objs <- ls()
+  rm.obs <- env.objs[-which(env.objs %in% obj.keep.list)]
+  rm(rm.obs)
+  cat("Plotting 95% confidence intervals for test values for fit evaluation of", dependent, ".\n")
+
+  dep_conf_plot <- ggplot2::ggplot(pdat, ggplot2::aes(x = indep, y = dep)) + ggplot2::geom_point() +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = pred + clow, ymax = pred + chigh), alpha = 0.5) + ggplot2::theme_bw() +
+    ggplot2::xlab(independent[1]) + ggplot2::ylab(dependent)
+  print(dep_conf_plot)
+
+
+  cat("Plotting esitmates. Red polygon represents 95% prediction limits of independent variable along y axis, and 95% prediction limits for each of those independent varibale values along the y axis.\n")
   tp <- ggplot2::ggplot(data = qm, ggplot2::aes(x = independent_1, y = dependent, z = norm_joint_quantile)) + ggplot2::stat_summary_hex(bins = 100) +
     ggplot2::scale_fill_viridis_c() + ggplot2::scale_color_viridis_c() + ggplot2::theme_bw() +
     ggplot2::geom_polygon(data = path, ggplot2::aes(x = independent_1, y = dependent), color = "red", fill = NA, size = 1) +
     ggplot2::xlab(independent[1]) + ggplot2::ylab(dependent) + ggplot2::labs(fill = "Average joint probability")
 
-  cat("Plotting esitmates. Red polygon represents 95% prediction limits of independent variable along y axis, and 95% prediction limits for each of those independent varibale values along the y axis.\n")
   print(tp)
 
   ret_quants <- cbind(intervals[,independent], predictions)
