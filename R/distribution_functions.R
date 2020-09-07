@@ -44,10 +44,10 @@ NULL
 #' @describeIn effect_size_distributions assign some loci an effect from a scaled t distribution given a probablity of non-zero effects
 #' @export
 rbayesB <- function(n, pi, d.f, scale){
-  effects <- rbinom(n, 1, 1 - pi) # these are non-zero
-  #effects[effects != 0] <- LaplacesDemon::rinvchisq(sum(effects), d.f, scale) # inverse chi distribution alternative
-  effects[effects != 0] <- scale * rt(sum(effects), d.f)
-  return(effects)
+  eff <- rbinom(n, 1, 1 - pi) # these are non-zero
+  #eff[eff != 0] <- LaplacesDemon::rinvchisq(sum(eff), d.f, scale) # inverse chi distribution alternative
+  eff[eff != 0] <- scale * rt(sum(eff), d.f)
+  return(eff)
 }
 
 #' @describeIn effect_size_distributions assign a fixed number of loci effects from a scaled t distribution given
@@ -55,7 +55,7 @@ rbayesB <- function(n, pi, d.f, scale){
 rbayesB_fixed <- function(n, sites, d.f, scale){
   eff <- numeric(n)
   eff[sample(n, sites, replace = F)] <- scale * rt(sites, d.f)
-  return(effects)
+  return(eff)
 }
 
 #' @describeIn effect_size_distributions assign some loci an effect from a scaled normal distribution given a probability of non-zero effects
@@ -79,7 +79,7 @@ rzero_inflated_normal_fixed <- function(n, sites, sd, scale){
 rflat <- function(n, pi, scale){
   eff <- rbinom(n, 1, 1 - pi) #does each site have an effect?
   eff[which(eff == 1)] <- scale
-  return(effects)
+  return(eff)
 }
 
 #' @describeIn effect_size_distributions assign a fixed number of loci a fixed effect
@@ -87,7 +87,7 @@ rflat <- function(n, pi, scale){
 rflat_fixed <- function(n, sites, scale){
   eff <- numeric(n)
   eff[sample(n, sites, replace = F)] <- scale
-  return(effects)
+  return(eff)
 }
 
 
