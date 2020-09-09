@@ -116,11 +116,13 @@ reasonable_transform <- function(parameters = c("pi", "scale")){
   #===========bank of often reasonable transforms===
   # forward transforms
   forwards <- list(pi = function(pi) log10(1 - pi),
-                   scale = function(scale) log10(scale))
+                   scale = function(scale) log10(scale),
+                   sites = function(sites) log10(sites))
 
   # back transforms
   back <- list(pi = function(pi) 1 - 10^pi,
-               scale = function(scale) 10^scale)
+               scale = function(scale) 10^scale,
+               sites = function(sites) 10^sites)
 
 
 
