@@ -53,6 +53,7 @@ rbayesB <- function(n, pi, d.f, scale){
 #' @describeIn effect_size_distributions assign a fixed number of loci effects from a scaled t distribution given
 #' @export
 rbayesB_fixed <- function(n, sites, d.f, scale){
+  sites <- floor(sites)
   eff <- numeric(n)
   eff[sample(n, sites, replace = F)] <- scale * rt(sites, d.f)
   return(eff)
@@ -69,6 +70,7 @@ rzero_inflated_normal <- function(n, pi, sd, scale){
 #' @describeIn effect_size_distributions assign a fixed number of loci effects from a scaled normal distribution
 #' @export
 rzero_inflated_normal_fixed <- function(n, sites, sd, scale){
+  sites <- floor(sites)
   eff <- numeric(n)
   eff[sample(n, sites, replace = F)] <- scale * rnorm(sites, 0, sd)
   return(eff)
@@ -85,6 +87,7 @@ rflat <- function(n, pi, scale){
 #' @describeIn effect_size_distributions assign a fixed number of loci a fixed effect
 #' @export
 rflat_fixed <- function(n, sites, scale){
+  sites <- floor(sites)
   eff <- numeric(n)
   eff[sample(n, sites, replace = F)] <- scale
   return(eff)
