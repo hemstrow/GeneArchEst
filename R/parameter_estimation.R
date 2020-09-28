@@ -235,7 +235,9 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
 
   # remove nas
   sims <- na.omit(sims)
-  predict_params <- predict_params[-attributes(sims)$na.action,, drop = F]
+  if(length(attributes(sims)$na.action) > 1){
+    predict_params <- predict_params[-attributes(sims)$na.action,, drop = F]
+  }
 
 
   #===========run the random forest prediction function=========
