@@ -229,13 +229,16 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
   # check for NAs in the stats, if any then remove those collumns from the data
   na.stats <- which(is.na(stats))
   if(length(na.stats) > 0){
+    warning("There are NAs in the summary statistics for the data. This is likely caused by the failure to detect peaks. The RF may have less predictive power. If there are visible peaks in the GWAS results, consider changing the peak finding parameters.")
     stats <- stats[-na.stats]
     sims <- sims[,-na.stats]
   }
 
   # remove nas
   sims <- na.omit(sims)
-  predict_params <- predict_params[-attributes(sims)$na.action,, drop = F]
+  if(length(attributes(sims)$na.action) > 1){
+    predict_params <- predict_params[-attributes(sims)$na.action,, drop = F]
+  }
 
 
   #===========run the random forest prediction function=========
