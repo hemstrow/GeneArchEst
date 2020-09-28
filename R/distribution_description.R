@@ -106,7 +106,8 @@ dist_desc <- function(p, meta, windows, delta, pcut = .005, chr = "chr", pvals =
     out_desc_p <- c(kurtosis = e1071::kurtosis(p),
                     skewness = e1071::skewness(p),
                     mean = mean(p), median = median(p),
-                    sd = sd(p), var = var(p))
+                    sd = sd(p), var = ifelse(length(p) == 0, NA, var(p))) # note, var errors when handed null (no peaks). This returns NA in that case instead.
+    out_desc_p[is.nan(out_desc_p)] <- NA
     return(c(quantsp, out_desc_p))
   }
 
