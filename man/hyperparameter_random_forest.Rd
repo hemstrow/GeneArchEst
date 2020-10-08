@@ -15,8 +15,8 @@ hyperparameter_random_forest(
   num_trees = 1000,
   mtry = function(columns) columns,
   num_threads = NULL,
-  parameter_transforms = list(pi = function(pi) log10(1 - pi)),
-  parameter_back_transforms = list(pi = function(pi) 1 - 10^pi),
+  parameter_transforms = reasonable_transform(hyperparameter_to_estimate)$forward,
+  parameter_back_transforms = reasonable_transform(hyperparameter_to_estimate)$back,
   importance = "permutation",
   scheme = "gwas",
   peak_delta = 0.5,
@@ -75,12 +75,12 @@ not needed unless different quantiles/predictions/etc are needed.}
 
 \item{...}{Extra arguments passed to \code{\link[ranger]{ranger}}.}
 
-\item{parameter_transforms.}{Named list of parameter transformations or NULL, default list(pi = function(pi) log10(1 - pi)).
+\item{parameter_transforms.}{Named list of parameter transformation functions or NULL, default the \code{\link{reasonable_transform}} for the named hyperparameter.
 Transformations to use on any estimated parameters. Any estimated hyperparameters with names matching those
 in this list will be transformed as given. Usefull if pi or other hyperparameter values in simulations
 are heavily skewed, as is often likely.}
 
-\item{parameter_back_transforms.}{Named list of parameter back transformations or NULL, default ist(pi = function(pi) 1 - 10^pi ).
+\item{parameter_back_transforms.}{Named list of parameter back transformation functions or NULL, default \code{\link{reasonable_transform}} for the named hyperparameter.
 Back transformations to use on any estimated parameters. Any estimated hyperparameters with names matching those
 in this list will be back_transformed as given prior to being returned.}
 }

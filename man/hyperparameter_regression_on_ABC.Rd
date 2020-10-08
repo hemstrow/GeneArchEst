@@ -11,10 +11,8 @@ hyperparameter_regression_on_ABC(
   regression_method = "rf",
   num_trees = 10000,
   num_threads = NULL,
-  parameter_transforms = list(pi = function(pi) log10(1 - pi), scale = function(scale)
-    log10(scale)),
-  parameter_back_transforms = list(pi = function(pi) 1 - 10^pi, scale = function(scale)
-    10^scale),
+  parameter_transforms = reasonable_transform(c("scale", "pi"))$forward,
+  parameter_back_transforms = reasonable_transform(c("scale", "pi"))$back,
   acceptance_threshold = 0.005,
   dist_var = "ks",
   hold_percent = 0.25,

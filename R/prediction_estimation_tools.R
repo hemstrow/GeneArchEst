@@ -396,6 +396,22 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
 }
 
+#' Run a GMMAT GWAS on genotype/phenotype data.
+#'
+#' @param x genotype data, default NULL. Genotype
+#'   with individuals in columns (either 1 or 2 columns per individual for unphased or phased data). Can either
+#'   be coercable to a matrix or be a \code{\link[bigstatsr]{FBM}}.
+#' @param phenotypes numeric. Phenotype data, one numeric value per individual, in the same order as the genotype data.
+#' @param maf numeric, default 0.05. Minor allele frequency filter to be applied to both G-matrix and GWAS. Ignored if x is NULL.
+#' @param pass_G numeric matrix, default NULL. An \emph{n x n} genetic relatedness matrix. If NULL, calculated from x via
+#'   \code{\link[AGHmatrix]{Gmatrix}} using the Yang et al 2010 method.
+#' @param GMMAT_infile character, default NULL. If provided, the file path to an infile for \code{\link[GMMAT]{glmm.score}}. If NULL,
+#'   will be written from x.
+#' @param phased logical, default F. Is the data in x phased (in two columns per individual)? Ignored if x is NULL.
+#' @param par numeric, default 1. Number of parallel cores to use for G matrix creation. Ignored if x is NULL.
+#' @param center logical, default T. If TRUE, the phenotypes will be centered (set to mean 0) prior to GWAS calculation
+#'
+#' @export
 pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT_infile = NULL,
                           phased = F, par = 1, center = T){
   #============transpose==================
