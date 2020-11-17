@@ -101,10 +101,14 @@ init_pop <- function(x,
 
 #=======function to do a single generation of random mating===========
 #' @export
-rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, facet = "group"){
+rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE){
+  if(length(unique(meta[,1])) != length(chr.length)){
+    stop("The number of unique chromosomes is not equal to the number of chromsome lengths provided.\n")
+  }
   if(!data.table::is.data.table(x)){
     x <- data.table::as.data.table(x)
   }
+  facet <- colnames(meta)[1]
   #=========get parents and assign gcs for the next gen====
   #make a new x with individuals in next gen
   ##find parents
@@ -158,7 +162,8 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, 
   #=========recombination and chromosome assignment======
   num.rec <- rec.dist(nrow(mates)*2*length(uf))
   rs <- sum(num.rec) #total number
-  rec.pos <- sample(chr.length, rs, T) #get positions for each of these events. Assumes equal chr length, otherwise would need to put this into the per. chr loop. Could do later if necissary, but it'd be a bit slower.
+  n.rec.per.chr <- tapply(num.rec, rep(chr.length, each = nrow(mates)*2), sum) # figure out how many recombination events per chromosome
+  rec.pos <- runif(rs, min = 0, max = rep(chr.length, n.rec.per.chr)) # get positions for each of these events.
 
   prog <- 0 #progress through num.rec tracker.
   pos.prog <- 0 #progress through recombination events tracker.
@@ -321,11 +326,11 @@ src <- '
 
 #' @export
 weighted.colSums <- function(data, weights){
-  if(class(data) == "FBM"){
+  if("FBM" %in% class(data)){
     return(bigstatsr::big_cprodVec(data, weights))
   }
   else{
-    return(crossprod(data, weights))
+    return(crossprod(as.matrix(data), weights))
   }
 }
 # weighted.colSums <- inline::cxxfunction(
@@ -672,7 +677,7 @@ process_vcf <- function(file, phased = T, filter_non_poly = T){
   }
   else{
     newname <- paste0(file, ".sep")
-    system(paste("grep -v ##", file, "| tr '|' '\t' >", newname))
+    shell(paste("grep -v '##'", file, "| tr '|' '\t' >", newname))
     file <- newname
     res <- data.table::fread(file, sep = "\t", header = T)
   }
