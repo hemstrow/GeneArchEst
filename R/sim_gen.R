@@ -41,6 +41,7 @@
 #' @param parameter_distributions list containing named functions, default
 #'   list(pi = function(x) rbeta(x, 25, 1), d.f = function(x) runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3)*100).
 #'   Named functions giving the distributions from which to draw effect_size distribution hyperparameters.
+#' @param save_effects character or FALSE, default FALSE. If true, simulated effects will be saved to filepath provided here.
 #'
 #' Uses the provided
 #' @export
@@ -53,7 +54,8 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                     # burnin = burnin, thin = thin, chain_length = chain_length, method = "BayesB",
                     par = 1, joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, phased = F, maf = 0.05,
-                    pass_windows = NULL, pass_G = NULL, GMMAT_infile = NULL){
+                    pass_windows = NULL, pass_G = NULL, GMMAT_infile = NULL, reg_res = NULL,
+                    find_similar_effects = F, real_effects = NULL, save_effects = F){
 
   #============schem functions for one simulation=============
   # gp <- function(x, pi, df, scale, method, t_iter, h, windows, center = center){
@@ -78,8 +80,11 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                                          scheme = "gwas", chr = colnames(meta)[1],
                                          peak_delta = peak_delta, peak_pcut = peak_pcut, window_sigma = window_sigma,
                                          burnin = NULL, thin = NULL, chain_length = NULL, maf = maf, phased = phased,
-                                         pass_windows = windows, pass_G = G, GMMAT_infile = GMMAT_infile)
+                                         pass_windows = windows, pass_G = G, GMMAT_infile = GMMAT_infile, find_similar_effects = find_similar_effects, real_effects = real_effects)
 
+    if(save_effects){
+      write.table(pseudo)
+    }
     return(stats)
   }
 
@@ -98,21 +103,24 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
   #============prep for simulations======================================
   # if any joint parameter priors, calculate and disambiguate
   joint_parms <- names(parameter_distributions)[which(parameter_distributions == "joint")]
+  parms <- as.data.frame(matrix(NA, iters, 0))
   if(length(joint_parms) > 0){
-    parms <- gen_parms(iters, joint_res, joint_acceptance, joint_parms, dist.var = joint_res_dist)
-
-    if(ncol(parms) < length(parameter_distributions)){
-      other_parms <- names(parameter_distributions)[which(!names(parameter_distributions) %in% colnames(parms))]
-      run_parameters <- vector("list", length = length(other_parms))
-      names(run_parameters) <- other_parms
-      for(i in 1:length(run_parameters)){
-        run_parameters[[i]] <- parameter_distributions[[other_parms[i]]](iters)
-      }
-      parms <- cbind(parms, as.data.frame(run_parameters))
-    }
-    run_parameters <- parms
-    rm(parms)
+    parms <- cbind(parms, gen_parms(iters, joint_res, joint_acceptance, joint_parms, dist.var = joint_res_dist))
   }
+  if(!is.null(reg_res)){
+    parms <- cbind(parms, sample_joint_quantile(iters, reg_res))
+  }
+  if(ncol(parms) < length(parameter_distributions)){
+    other_parms <- names(parameter_distributions)[which(!names(parameter_distributions) %in% colnames(parms))]
+    run_parameters <- vector("list", length = length(other_parms))
+    names(run_parameters) <- other_parms
+    for(i in 1:length(run_parameters)){
+      run_parameters[[i]] <- parameter_distributions[[other_parms[i]]](iters)
+    }
+    parms <- cbind(parms, as.data.frame(run_parameters))
+  }
+  run_parameters <- parms
+  rm(parms)
   h <- h_dist(iters)
 
 
@@ -157,7 +165,6 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
     if(!is.list(ret)){
       ret <- as.data.frame(t(ret))
     }
-
     return(list(stats = ret, errors = list(parms = ret[-c(1:nrow(ret)),], msgs = character())))
   }
 

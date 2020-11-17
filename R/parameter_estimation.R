@@ -1,7 +1,23 @@
+#' Calculates statistics for GWAS or prediction effect/p-value distributions.
+#'
+#' Given genotypic data, calculates descriptive statistics of GWAS/gp results \emph{or} compares
+#' those results to that from the real data.
+#'
+#' @param Object coercable to matrix or NULL, default NULL. If provided, a matrix coercable object containing genotype calls. If NULL, a GMMAT infile must instead be provided.
+#' @param meta data.frame. A data.frame containing SNP metadata. Must have a column containing chromosome info (named to match the "chr" argument) and another named "position" containing position information in base pairs.
+#' @param phenos numeric. A vector of phenotypes.
+#' @param scheme "gwas" or "gp", default "gwas". Method to use.
+#' @param chr character, default "chr". Name of the metadata column containing chromosome information.
+#' @param find_similar_effects logical, default F. If F, calculates descriptive stats for the effects. If T, compares distribution to the "real_effects" data.
+#' @param real_effects numeric or NULL, default NULL. If provided and find_similar_effects is TRUE, this effect distribution is compared to that for the provided geno/phenotypes. This can
+#'   be calculated for the real data using \code{\link{pred_GWAS_FBM}}.
+#' @param save_effects character or FALSE, default FALSE. If true, simulated effects will be appended to filepath provided here.
+
 calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme = "gwas", chr = "chr",
                                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
                                     burnin = NULL, thin = NULL, chain_length = NULL, maf = 0, phased = F,
-                                    pass_windows = F, pass_G = NULL, GMMAT_infile = NULL){
+                                    pass_windows = F, pass_G = NULL, GMMAT_infile = NULL,
+                                    find_similar_effects = F, real_effects = NULL, save_effects = F){
   #===========functions to run gwas or gp=============
   gwas <- function(x, phenos, meta, windows, peak_delta, peak_pcut, chr, GMMAT_infile = NULL, pass_G = NULL){
     if(class(x) == "FBM"){
@@ -31,8 +47,18 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
     }
 
 
+    if(find_similar_effects){
+      stats <- compare_distributions(real_effects, x_pi)
+    }
 
-    stats <- dist_desc(x_pi, meta, windows, peak_delta, peak_pcut, chr, pvals = T)
+    else{
+      stats <- dist_desc(x_pi, meta, windows, peak_delta, peak_pcut, chr, pvals = T)
+    }
+
+
+    if(save_effects != F){
+      write.table(t(data.frame(ef = x_pi)), file = save_effects, append = T, quote = F, row.names = F, col.names = F)
+    }
     return(stats = stats)
   }
   gp <- function(x,  phenos, meta, windows, peak_delta, peak_pcut, chr){
@@ -42,7 +68,18 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
                        prediction.program = "BGLR", prediction.model = method,
                        runID = "gp_pseudo", verbose = F)
 
-    stats <- dist_desc(pseudo.pred, meta, windows, peak_delta, peak_pcut, chr, pvals = F)
+
+    if(find_similar_effects){
+      stats <- compare_distributions(real_effects, pseudo.pred)
+    }
+
+    else{
+      stats <- dist_desc(pseudo.pred, meta, windows, peak_delta, peak_pcut, chr, pvals = F)
+    }
+
+    if(save_effects != F){
+      write.table(t(data.frame(ef = pseudo.pred)), file = save_effects, append = T, quote = F, row.names = F, col.names = F)
+    }
 
     return(stats = stats)
   }
