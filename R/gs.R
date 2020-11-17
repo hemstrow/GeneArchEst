@@ -1,176 +1,60 @@
 #=======function to do growth and selection=======
 # note: init means are we simply intiating a population under selection. We'll need to keep all markers if so.
 #' @export
-gs <- function(x,
+gs <- function(genotypes,
+               meta,
+               phenotypes = NULL,
+               BVs = NULL,
+               h,
                gens,
-               growth.function,
-               survival.function,
-               selection.shift.function,
-               rec.dist,
+               chr.length,
+               growth.function = function(n) logistic_growth(n, 500, 2),
+               survival.function = function(phenotypes, opt_pheno, ...) BL_survival(phenotypes, opt_pheno, omega = 1),
+               selection.shift.function = function(opt, iv) optimum_constant_slide(opt, iv, 0.3),
+               rec.dist = function(n) rpois(n, lambda = 1),
                var.theta = 0,
-               pred.method = "effects",
                plot_during_progress = FALSE,
-               facet = "group", chr.length = 10000000,
-               fgen.pheno = FALSE,
-               intercept_adjust = FALSE,
-               print.all.freqs = FALSE,
-               adjust_phenotypes = FALSE,
+               facet = "group",
                do.sexes = TRUE,
                init = F,
-               verbose = T){
+               verbose = T,
+               print.all.freqs = F){
   if(verbose){cat("Initializing...\n")}
-  #unpack x:
-  if(pred.method == "effects"){ #unpack estimated effect sizes if provided.
-    effect.sizes <- x$e.eff[,2]
-  }
-  if(fgen.pheno){ #unpack phenotypes if requested
-    fgen.pheno <- x$phenotypes$p
-  }
-  h <- x$h
-  meta <- x$meta
-  if(pred.method != "real"){
-    pred.mod <- x$output.model$mod
-    pred.dat <- x$output.model$data
-    model <- x$prediction.program
-  }
-  else{
-    model <- "real"
-    pred.method <- "effects" #since everything else works the same, just need to change inputs.
-    effect.sizes <-  meta$effect
-  }
-  if(pred.method == "effects"){
-    pred.mod <- NULL
-    pred.dat <- NULL
-  }
-  if(pred.method == "model"){
-    effect.sizes <- NULL
-  }
-  x <- x$x
+  genotypes <- data.table::as.data.table(genotypes)
 
-
-  #=================checks========
-  if(!pred.method %in% c("model", "effects")){
-    stop("pred.method must be provided. Options:\n\tmodel: predict phenotypes directly from the model provided.\n\teffects: predict phenotypes from estimated effect sizes.\n")
-  }
-
-  if(!data.table::is.data.table(x)){
-    x <- data.table::as.data.table(x)
-  }
-
-  if(pred.method == "effects"){
-    if(nrow(x) != length(effect.sizes) | nrow(x) != nrow(meta)){
-      stop("Provided x, effect sizes, and meta must all be of equal length!")
+  if(is.null(phenotypes) | is.null(BVs)){
+    p <- get.pheno.vals(genotypes, meta$effect, h = h, phased = T)
+    if(is.null(phenotypes)){
+      phenotypes <- p$p
     }
-  }
-  else{
-    if(nrow(x) != nrow(meta)){
-      stop("Provided x and meta must be of equal length!")
+    if(is.null(BVs)){
+      BVs <- p$a
     }
-  }
-
-  if(pred.method == "model"){
-    if(!model %in% c("JWAS", "BGLR", "ranger")){
-      stop("To predict from the model, a JWAS, BGLR, or ranger model must be provided.\n")
-    }
-  }
-  else{
-    if(model == "ranger"){
-      stop("RF does not estimate effect sizes, so prediction must be done using the ranger model.\n")
-    }
-  }
-
-  # before doing anything else, go ahead and remove any loci from those provided with no effect! Faster this way.
-  # don't do this if initializing the population!
-  if(pred.method == "effects" & !init){
-    if(any(effect.sizes == 0)){
-      n.eff <- which(effect.sizes == 0)
-      x <- x[-n.eff,]
-      meta <- meta[-n.eff,]
-      effect.sizes <- effect.sizes[-n.eff]
-    }
-  }
-
-  #=================get starting phenotypic values and BVs=========
-  # get starting phenotypes and addative genetic values
-  ## If first gen phenos aren't provided (should be uncommon)
-  if(length(fgen.pheno) != ncol(x)/2){
-    if(pred.method == "effects"){
-      if(verbose){cat("Generating representative starting phenotypes from effect sizes.")}
-      pheno <- get.pheno.vals(x, effect.sizes, h)
-      a <- pheno$a # BVs
-      pheno <- pheno$p # phenotypic values
-    }
-    else{
-      if(verbose){cat("Generating representative starting phenotypes from model.")}
-      a <- pred.BV.from.model(pred.mod, x, pred.method, model)
-      pheno <- a +  e.dist.func(a, var(a), h) #add environmental effects
-      #working here
-    }
-  }
-
-  # otherwise use those, but still need to estimate BVs
-  else{
-    if(verbose){cat("Using provided phenotypic values.")}
-    pheno <- fgen.pheno #provded phenotypic values.
-
-    a <- pred.BV.from.model(pred.model = pred.mod, g = x, pred.method = pred.method,
-                            model.source = model, h = h, h.av = "fgen", effect.sizes = effect.sizes)$a
-
-  }
-
-  #================set up BV variation adjustment to correct for drop in variance from GP methods============
-  if(adjust_phenotypes){
-    reorg_gcs <- rand.mating(x, ncol(x)/2, meta, rec.dist, chr.length, do.sexes, facet) # reorganize chrs once, since this causes one heck of a drop in var(a) in some GP results
-    reorg_gcs <- rand.mating(reorg_gcs, ncol(x)/2, meta, rec.dist, chr.length, do.sexes, facet)
-    re_p <- pred.BV.from.model(pred.model = pred.mod, g = reorg_gcs, pred.method = pred.method,
-                               model.source = model, h = h, h.av = "fgen", effect.sizes = effect.sizes) # re-predict BVs
-    re_a <- re_p$a
-    re_p <- re_p$p
-    adj.a.var <- var(re_a) #variance next gen
-
-
-    # now need to adjust a and pheno to fit the variance a gen later
-    # multiply future phenotypes by the square root of these values, then adjust the mean back to the correct mean.
-
-
-
-    # old version which adjusts back to the starting phenotypic var every generation.
-    # reorg_gcs <- rand.mating(x, ncol(x)/2, meta, rec.dist, chr.length, do.sexes, facet) # reorganize chrs once, since this causes one heck of a drop in var(a) in some GP results
-    # re_p <- pred.BV.from.model(pred.model = pred.mod, g = reorg_gcs, pred.method = pred.method,
-    #                                 model.source = model, h = h, h.av = "fgen", effect.sizes = effect.sizes) # re-predict BVs
-    # re_a <- re_p$a
-    # re_p <- re_p$p
-    # ad.factor <- var(pheno)/(var(re_a)/h) # here's our adjustment factor
-    # rm(re_a, re_p, reorg_gcs)
-  }
-
-  #if requested, get the amount to adjust phenotypes by in future gens.
-  if(intercept_adjust){
-    i.adj <- mean(pheno)
+    rm(p)
   }
 
   #================print out initial conditions, intiallize final steps, and run===========
   #starting optimal phenotype, which is the starting mean addative genetic value.
-  opt <- mean(a) #optimum phenotype
+  opt <- mean(BVs) #optimum phenotype
 
   if(verbose){
     cat("\n\n===============done===============\n\nStarting parms:\n\tstarting optimum phenotype:", opt,
-        "\n\tmean phenotypic value:", mean(pheno), "\n\taddative genetic variance:", var(a), "\n\tphenotypic variance:", var(pheno), "\n\th:", h, "\n")
+        "\n\tmean phenotypic value:", mean(phenotypes), "\n\taddative genetic variance:", var(BVs), "\n\tphenotypic variance:", var(phenotypes), "\n\th:", h, "\n")
   }
 
   #make output matrix and get initial conditions
   out <- matrix(NA, nrow = gens + 1, ncol = 8)
-  colnames(out) <- c("N", "mu_pheno", "mu_a", "opt", "diff", "var_a", "stochastic_opt", "gen")
-  N <- ncol(x)/2 #initial pop size
-  h.av <- var(a) #get the historic addative genetic variance.
-  h.pv <- var(pheno) #historic phenotypic variance.
+  colnames(out) <- c("N", "mu_phenotypes", "mu_BVs", "opt", "diff", "var_BVs", "stochastic_opt", "gen")
+  N <- ncol(genotypes)/2 #initial pop size
+  h.av <- var(BVs) #get the historic addative genetic variance.
+  h.pv <- var(phenotypes) #historic phenotypic variance.
 
-  out[1,] <- c(N, mean(pheno), mean(a), opt, 0, h.av, opt, 1) #add this and the mean initial additive genetic variance
+  out[1,] <- c(N, mean(phenotypes), mean(BVs), opt, 0, h.av, opt, 1) #add this and the mean initial additive genetic variance
   if(plot_during_progress){
     library(ggplot2)
     pdat <- reshape2::melt(out)
     colnames(pdat) <- c("Generation", "var", "val")
-    ranges <- data.frame(var = c("N", "mu_pheno", "mu_a", "opt", "diff"),
+    ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
                          ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
                          ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
     pdat <- merge(pdat, ranges, by = "var")
@@ -202,7 +86,7 @@ gs <- function(x,
 
     #survival:
     s <- rbinom(out[(i-1),1], 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
-                survival.function(pheno, t.opt, hist.var = h.pv)) # calling the function in this way ensures that individuals with phenotypes at the optimum have a survival probability of whatever is set in the function.
+                survival.function(phenotypes, t.opt, var = h.pv)) # calling the function in this way ensures that individuals with phenotypes at the optimum have a survival probability of whatever is set in the function.
     #if the population has died out, stop.
     if(sum(s) <= 1){
       break
@@ -212,81 +96,52 @@ gs <- function(x,
     out[i,1] <- round(growth.function(sum(s)))
 
     #make a new x with the survivors
-    x <- x[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
-
-    # # check phenotypic variance...
-    # temp <- get.pheno.vals(x, effect.sizes, h, hist.a.var = h.av)
-    # ptemp <- data.frame(val = c(a, temp$a), class = c(rep("T0", length(a)), rep("T1", length(temp$a))))
-    # temp <- tem$p
-    # if(intercept_adjust){
-    #   temp <- temp + i.adj
-    # }
-    # # adjust variance
-    # if(adjust_phenotypes != FALSE){
-    #   s.p.mean <- mean(temp)
-    #   temp <- temp*sqrt(ad.factor)
-    #   temp <- temp - (mean(temp) - s.p.mean)
-    # }
-    # print(var(temp))
+    genotypes <- genotypes[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
 
     #=============do random mating, adjust selection, get new phenotype scores, get ready for next gen====
-    y <- rand.mating(x, out[i,1], meta, rec.dist, chr.length, do.sexes, facet)
+    y <- rand.mating(x = genotypes, N.next = out[i,1], meta = meta, rec.dist = rec.dist, chr.length, do.sexes)
     # check that the pop didn't die due to every individual being the same sex (rand.mating returns NULL in this case.)
     if(is.null(y)){
       break
     }
     else{
-      x <- y
+      genotypes <- y
       rm(y)
     }
 
     #get phenotypic/genetic values
-    pa <- pred.BV.from.model(pred.model = pred.mod,
-                             g = x,
-                             pred.method = pred.method,
-                             model.source = model,
-                             h = h,
-                             h.av = h.av,
-                             effect.sizes = effect.sizes)
-    a <- pa$a
-    pheno <- pa$p
+    pa <- get.pheno.vals(genotypes, effect.sizes = meta$effect,
+                         h = h,
+                         hist.a.var = h.av,
+                         phased = T)
+    BVs <- pa$a
+    phenotypes <- pa$p
 
-    #if requested, adjust the phenotypic values.
-    # adjust intercept
-    if(intercept_adjust){
-      pheno <- pheno + i.adj
-    }
-    # adjust variance
-    if(adjust_phenotypes != FALSE){
-      s.p.mean <- mean(pheno)
-      pheno <- pheno*sqrt(ad.factor)
-      pheno <- pheno - (mean(pheno) - s.p.mean)
-    }
 
     #adjust selection optima
     opt <- selection.shift.function(opt, iv = sqrt(h.av))
 
     #save
-    out[i,2] <- mean(pheno)
-    out[i,3] <- mean(a)
+    out[i,2] <- mean(phenotypes)
+    out[i,3] <- mean(BVs)
     out[i,4] <- opt
-    out[i,5] <- opt - mean(a)
-    out[i,6] <- var(a)
+    out[i,5] <- opt - mean(BVs)
+    out[i,6] <- var(BVs)
     out[i,7] <- t.opt
     if(verbose){
       cat("gen:", i-1,
           "\tf_opt:", round(out[i-1,4],3),
           "\ts_opt", round(out[i-1,7],3),
-          "\tmean(pheno):", round(out[i,2],3),
-          "\tmean(a):", round(out[i,3],3),
-          "\tvar(a):", round(var(a),3),
+          "\tmean(phenotypes):", round(out[i,2],3),
+          "\tmean(BVs):", round(out[i,3],3),
+          "\tvar(BVs):", round(var(BVs),3),
           "\tNs:", sum(s),
           "\tN(t+1):", out[i,1],"\n")
     }
     if(plot_during_progress){
       pdat <- reshape2::melt(out)
       colnames(pdat) <- c("Generation", "var", "val")
-      ranges <- data.frame(var = c("N", "mu_pheno", "mu_a", "opt", "diff"),
+      ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
                            ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
                            ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
       pdat <- merge(pdat, ranges, by = "var")
@@ -302,7 +157,7 @@ gs <- function(x,
 
     #add allele frequencies if requested
     if(print.all.freqs){
-      a.fqs[,i] <- rowSums(x)/ncol(x)
+      a.fqs[,i] <- rowSums(genotypes)/ncol(genotypes)
     }
 
     gc()
@@ -317,5 +172,351 @@ gs <- function(x,
     out <- list(summary = out, frequencies = a.fqs)
   }
 
-  return(list(run_vars = out, x = x, phenos = pheno, BVs = a))
+  return(list(run_vars = out, genotypes = genotypes, phenotypes = phenotypes, BVs = BVs))
+}
+
+
+#=======function to pull parameter values to run from a joint quantile result==========
+#' Sample hyperparameter values from hyperparameter regression/random forest results.
+#'
+#' Samples hyperparameters from the joint quantile distribution resulting from a regression on ABC results
+#' and a random forest.
+#'
+#' @param n numeric. The number of samples to draw.
+#' @param reg regression results from \code{\link{hyperparameter_regression_on_ABC}}.
+#' @return A data.frame containing the sampled hyperparameter values.
+#'
+#' @author William Hemstrom
+sample_joint_quantile <- function(n, reg){
+  res <- reg$joint_quantile_long[sample(1:nrow(reg$joint_quantile_long), n, T, reg$joint_quantile_long$norm_joint_quantile), c(1, 4)]
+  colnames(res) <- c(reg$independent, reg$dependent)
+  return(res)
+}
+
+#=======distribution functions for survival simulations===============================
+#' Calculate population size after logistic growth
+#'
+#' Given a starting population size, find the estiamted size after one generation of
+#' logistic growth.
+#'
+#' @param n numeric. Starting population size.
+#' @param K numeric. Carrying capacity.
+#' @param r numeric. Logistic growth rate.
+#'
+#' @export
+logistic_growth <- function(n, K, r, ...){
+  return((K*n*exp(r))/(K + n*(exp(r*1) - 1)))
+}
+
+#' Calculate survivability probabilities using a scaled normal distribution.
+#'
+#' For a given optimum phenotype and surivival variance, calculate survival probabilities from a
+#' normal distribution.
+#'
+#' Surival probabilities are given by \code{\link[stats]{pnorm}}. For values above the optimum phenotype,
+#' the surivial is given by 1 - the resulting value. If a maxium survival other than 0.5 is given,
+#' the surivivals are scaled such that individuals with the optimum phenotype will have the provided
+#' survival probability.
+#'
+#' @param phenotypes numeric. Vector of phenotypes.
+#' @param opt_pheno numeric. Optimum phenotype.
+#' @param var numeric. Variance of surivial distribution.
+#' @param max.survival numeric. Maximum possible survival probability.
+#'
+#' @export
+normal_survival <- function(phenotypes, opt_pheno, var, max.survival = .5, ...){
+  if(max.survival > 1){
+    warning("Max surivial is above 1, will reset to 1.")
+    max.survival <- 1
+  }
+  # get survival probabilities from normal curve
+  x <- pnorm(phenotypes, opt_pheno, sqrt(var))
+  x <- ifelse(x > .5, 1 - x, x)
+
+  # scale for target max survival
+  scale_factor <- max.survival/.5
+  x <- x*scale_factor
+
+  return(x)
+}
+
+#' Calculate survival using the Burger and Lynch method
+#'
+#' Surivial is caluclated using equation 1 from Burger and Lynch 1995.
+#'
+#' @param phenotypes numeric. Vector of phenotypes of individuals.
+#' @param opt_pheno numeric. Optimum phenotype this generation.
+#' @param omega numeric. Strength of stabilizing selection. Smaller numbers mean stronger selection.
+BL_survival <- function(phenotypes, opt_pheno, omega, ...){
+  exp(-((phenotypes - opt_pheno)^2)/(2*omega^2))
+}
+
+#' Increase the selection optimum by a given percentage of starting variance each generation.
+#'
+#' @param opt numeric. Initial optimum phenotype.
+#' @param iv numeric. Initial variance. The optimum will increase by some portion of this variance.
+#' @param slide numeric. Proportion of the initial variance by which the optimum phenotype will slide.
+#'
+#' @export
+optimum_constant_slide <- function(opt, iv, slide = 0.3, ...){
+  return(opt + iv*slide)
+}
+
+#' Increases the selection optimum according to logistic growth.
+#'
+#' @param opt numeric. Current optimum phenotype.
+#' @param init_opt numeric. Initial optimum phenotype
+#' @param scale numeric. The proportion of the initial optimum phenotype at which the slide will max out.
+#' @param r numeric. The growth rate of the optimum phenotype.
+#'
+#' @export
+optimum_logistic_slide <- function(opt, init_opt, scale, r, ...){
+  K <- init_opt*scale
+
+  if(opt < 0){
+    opt <- abs(opt)
+    K <- -K
+    return(-1*((K*opt*eoptp(r))/(K + opt*(eoptp(r*1) - 1))))
+  }
+  else{
+    return((K*opt*eoptp(r))/(K + opt*(eoptp(r*1) - 1)))
+  }
+}
+
+
+
+#==============quantitative genetics models of population trends==========
+#' Estimate the average population sizes of a population under selection according to Burger and Lynch 1995.
+#'
+#' Uses the equations laid out in Burger and Lynch 1995 to estimate the average size of a population
+#' overtime as the optimum phenotype changes. While some processes are \emph{modeled} as stochastic,
+#' this returns the \emph{mean} population sizes over time, and so is not stochastic itself.
+#'
+#' Note that the phenotypic variance is
+#' scaled such that the enivironmental variance should equal 1 given the provided h.
+#' k, var.theta, and omega should be scaled to match this.
+#'
+#' If nloci, alpha, and mu are all provided, the stochastic house of cards
+#' approximation of genetic variance is used to approximate changes in genetic variance
+#' each generation based \emph{only} on changes in effective population size. Otherwise,
+#' genetic variance is assumed to not change in each generation and is based solely on the
+#' genetic variance calculated from the provided heritability and phenotypes.
+#'
+#' @param phenotypes numeric. Vector of initial phenotypes.
+#' @param h numeric. Heritability of the trait.
+#' @param B numeric. Number of offspring each surviving adult has. Not stochastic.
+#' @param K numeric. Carrying capacity. Individuals surviving selection will be randomly culled to this number.
+#' @param omega numeric. Width of the selection function. Smaller numbers equate to stronger selection around the optimum.
+#' @param var.theta numeric. Variance of the stochastic selection optimum.
+#' @param k numeric. Proportion by which the optimum phenotype increases each generation (where mean(opt) = k*t).
+#' @param gens numeric, default Inf. Number of generations to iterate.
+#' @param n numeric, default NULL. Initial population size. If null, equal to the number of provided phenotypes.
+#' @param nloci numeric, default NULL. Number of effective loci. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
+#' @param alpha numeric, default NULL. Standard deviation of the effect of new mutations. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
+#' @param mu numeric, default NULL. Mutation rate. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
+gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL, nloci = NULL, alpha = NULL, mu = NULL){
+  # calculate variances
+  p_var <- var(phenotypes)
+  g_var <- h * p_var
+  e_var <- p_var - g_var
+
+  # standardize such that e_var = 1
+  p_var <- p_var/e_var
+  g_var <- g_var/e_var
+  e_var <- e_var/e_var
+
+
+  # iterate across time to get pop sizes
+  t <- 1
+  Vs <- (omega^2) + e_var
+  s <- g_var/(g_var + Vs)
+  mean_phenos <- 0
+  V_mean_phenos <- 0
+  lambdas <- NA
+  opt_pheno <- 0
+  if(is.null(n)){
+    n <- length(phenotypes)
+  }
+
+  while(n[t] >= 2 & t <= gens){
+    ne <- ((2*B)/((2*B) - 1))*n[t] # BL eq 13.
+
+    # if nloci, alpha, and mu provided, use stochastic house of cards to estimate g_var this gen. Otherwise assume constant.
+    if(!is.null(nloci) & !is.null(alpha) & !is.null(mu)){
+      g_var <- (4*nloci*mu*ne*alpha^2)/(1 + ((ne*alpha^2)/Vs)) #  BL eq 14.
+    }
+
+    #equation 7a
+    Vgt <- (((((g_var + Vs)^2)/(ne*(g_var + 2*Vs))) + (g_var*var.theta)/(g_var + 2*Vs)) *
+      (1 - (1 - s)^(2*t)))
+    Vlt <- Vs + g_var + Vgt + var.theta
+    Egt <- k*t - (k/s)*(1 - (1 - s)^t)
+
+    # equation 9
+    Bo <- B*omega/sqrt(Vlt)
+    Lt <- Bo * exp(-((Egt - k*t)^2)/(2*Vlt))
+
+    # growth
+    nt <- Lt*n[t]
+    if(nt > K){nt <- K}
+
+    # update
+    n <- c(n, nt)
+    mean_phenos <- c(mean_phenos, Egt)
+    V_mean_phenos <- c(V_mean_phenos, Vgt)
+    lambdas <- c(lambdas, Lt)
+    opt_pheno <- c(opt_pheno, k*t)
+    if(t > 1 & lambdas[t] == lambdas[t +1]){
+      warning("Population sustainable: k is too small to cause extinction.\n")
+      break
+    }
+    t <- t + 1
+  }
+
+  out <- data.frame(t = 1:length(n), n = n, mean_pheno = mean_phenos,
+                    V_mean_pheno = V_mean_phenos, lambda = lambdas, opt_pheno = opt_pheno)
+  return(out)
+}
+
+#' Simulate population demographics under selection with the Breeder's Equation.
+#'
+#' Uses several equations from Burger and Lynch 1995 to calculate ne and additive genetic variance,
+#' but otherwise simulates purely based on the Breeder's Equation.
+#'
+#' Note that the phenotypic variance is
+#' scaled such that the enivironmental variance should equal 1 given the provided h.
+#' k, var.theta, and omega should be scaled to match this.
+#'
+#' If nloci, alpha, and mu are all provided, the stochastic house of cards
+#' approximation of genetic variance is used to approximate changes in genetic variance
+#' each generation based \emph{only} on changes in effective population size. Otherwise,
+#' genetic variance is assumed to not change in each generation and is based solely on the
+#' genetic variance calculated from the provided heritability and phenotypes.
+#'
+#' @param phenotypes numeric. Vector of initial phenotypes.
+#' @param h numeric. Heritability of the trait.
+#' @param B numeric. Number of offspring each surviving adult has. Not stochastic.
+#' @param K numeric. Carrying capacity. Individuals surviving selection will be randomly culled to this number.
+#' @param omega numeric. Width of the selection function. Smaller numbers equate to stronger selection around the optimum.
+#' @param var.theta numeric. Variance of the stochastic selection optimum.
+#' @param k numeric. Proportion by which the optimum phenotype increases each generation (where mean(opt) = k*t).
+#' @param gens numeric, default Inf. Number of generations to iterate.
+#' @param n numeric, default NULL. Initial population size. If null, equal to the number of provided phenotypes.
+#' @param nloci numeric, default NULL. Number of effective loci. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
+#' @param alpha numeric, default NULL. Standard deviation of the effect of new mutations. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
+#' @param mu numeric, default NULL. Mutation rate. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
+gs_breeders <- function(phenotypes, h, B, K,
+                        omega, var.theta, k, gens = Inf, n = NULL,
+                        nloci = NULL, alpha = NULL, mu = NULL){
+  # calculate variances
+  p_var <- var(phenotypes)
+  g_var <- h * p_var
+  e_var <- p_var - g_var
+
+  # standardize such that e_var = 1
+  p_var <- p_var/e_var
+  g_var <- g_var/e_var
+  e_var <- e_var/e_var
+
+
+  # iterate across time to get pop sizes
+  t <- 1
+  Vs <- (omega^2) + e_var
+  s <- g_var/(g_var + Vs)
+  opt_pheno <- 0
+  phenotypes <- phenotypes - mean(phenotypes) # center
+  mean_phenos <- 0
+  Rs <- 0
+  Ss <- 0
+  opt <- 0
+  if(is.null(n)){
+    n <- length(phenotypes)
+  }
+
+
+
+  while(n[t] >= 2 & t <= gens){
+    # stochastic survival
+    t_kt <- sum(k*t + rnorm(1, 0, sqrt(var.theta)))
+    surv <- rbinom(length(phenotypes), 1, BL_survival(phenotypes, t_kt, omega))
+
+    nsurv <- sum(surv)
+    if(nsurv > K){surv[sample(which(surv == 1), nsurv - K)] <- 0; nsurv <- K} # if we are above K, kill some more at random.
+
+    n <- c(n, sum(surv))
+    opt <- c(opt, t_kt)
+    new_mean_phenos <- mean(phenotypes[which(surv == 1)])
+    mean_phenos <- c(mean_phenos, new_mean_phenos)
+
+    if(sum(surv) < 2){
+      Rs <- c(Rs, NA)
+      Ss <- c(Ss, NA)
+      break
+    }
+
+    # apply the breeder's equation to get the response to selection (what portion of the change in phenotype is passed?)
+    S <- new_mean_phenos - mean(phenotypes)
+    R <- h*S
+
+    # next gen's phenotypes
+
+
+
+    # if nloci, alpha, and mu provided, use stochastic house of cards to estimate g_var this gen. Otherwise assume constant.
+    if(!is.null(nloci) & !is.null(alpha) & !is.null(mu)){
+      ne <- ((2*B)/((2*B) - 1))*nsurv # BL eq 13.
+      g_var <- (4*nloci*mu*ne*alpha^2)/(1 + ((ne*alpha^2)/Vs)) # BL eq 14.
+
+      phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, g_var + e_var)
+    }
+    else{
+      phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, p_var)
+
+    }
+
+    Rs <- c(Rs, R)
+    Ss <- c(Ss, S)
+    t <- t + 1
+  }
+
+  out <- data.frame(t = 1:length(n), n = n, mean_pheno = mean_phenos, opt_pheno = opt,
+                    response_to_selection = Rs, selection_differential = Ss)
+  return(out)
+}
+
+
+
+# Function to calculate the estimated time untill a population begins to crash (growth rate less than one) based on Burger and Lynch 1995.
+#    g_var: addative genetic variance
+#    e_var: environmental variance
+#    omega: width of the fitness function, usually given as omega^2
+#    k: rate of environmental change in phenotypic standard deviations
+#    B: mean number of offspring per individual
+#    Ne: effective population size
+#    theta_var: environmental stochasticity
+B_L_t1_func <- function(g_var, e_var, omega, k, B, Ne, theta_var){
+  # calc Vs
+  Vs <- (omega^2) + e_var
+
+  # calc Vlam
+  # simplified: Vlam = (Vs*(1+2*Ne))/2*Ne + (((1+2*Vs)*(g_var+theta_var))/2*Vs)
+  V_gt <- (Vs/(2*Ne)) + (g_var*theta_var)/(2*Vs)
+  Vlam <- Vs + g_var + V_gt + theta_var
+
+  #calc kc
+  Bo <- B*omega/sqrt(Vlam)
+  if(Bo < 1){
+    return(list(t1 = NA, kc = NA, Vs = Vs, Vlam = Vlam, Bo = Bo))
+  }
+  kc <- (g_var/(g_var + Vs))*sqrt(2*Vs*log(Bo))
+
+  if(k<kc){
+    t1 <- Inf
+  }
+  else{
+    t1 <- -((g_var + Vs)/g_var)*log(1-(kc/k))
+  }
+
+  #calc t1
+  return(list(t1 = t1, kc = kc, Vs = Vs, Vlam = Vlam, Bo = Bo))
 }
