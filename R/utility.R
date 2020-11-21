@@ -391,7 +391,7 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
 
 #converts 2 column to 1 column genotypes and transposes
 convert_2_to_1_column <- function(x){
-  if(class(x) == "FBM"){
+  if("FBM" %in% class(x)){
     x1 <- bigstatsr::FBM(nrow(x), ncol(x)/2, init =
                            x[,seq(1, ncol(x), by = 2)])
     x2 <- bigstatsr::FBM(nrow(x), ncol(x)/2, init =
@@ -889,3 +889,18 @@ make_yang_G_FBM <- function(SNPmatrix, maf = 0.05, par = 1){
 }
 
 
+fetch_phenotypes_ranger <- function(genotypes, model, h, a.var = NULL){
+  tgt <- convert_2_to_1_column(genotypes)
+  colnames(tgt) <- model$forest$independent.variable.names
+  warning("Loci in genotypes assumed to be in same order as provided to random forest model.\n")
+  a <- predict(model, data = tgt)$predictions
+  if(is.null(a.var)){
+    p <- a + e.dist.func(a, var(a), h = h)
+  }
+  else{
+    p <- a + e.dist.func(a, a.var, h = h)
+
+  }
+  p <- list(a = a, p = p)
+  return(p)
+}

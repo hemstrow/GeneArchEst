@@ -407,3 +407,40 @@ compare_peaks <- function(o, p){
 
   return(c(npeak_diff = npdiff, diffs))
 }
+
+
+
+# Function to calculate the estimated time untill a population begins to crash (growth rate less than one) based on Burger and Lynch 1995.
+#    g_var: addative genetic variance
+#    e_var: environmental variance
+#    omega: width of the fitness function, usually given as omega^2
+#    k: rate of environmental change in phenotypic standard deviations
+#    B: mean number of offspring per individual
+#    Ne: effective population size
+#    theta_var: environmental stochasticity
+B_L_t1_func <- function(g_var, e_var, omega, k, B, Ne, theta_var){
+  # calc Vs
+  Vs <- (omega^2) + e_var
+
+  # calc Vlam
+  # simplified: Vlam = (Vs*(1+2*Ne))/2*Ne + (((1+2*Vs)*(g_var+theta_var))/2*Vs)
+  V_gt <- (Vs/(2*Ne)) + (g_var*theta_var)/(2*Vs)
+  Vlam <- Vs + g_var + V_gt + theta_var
+
+  #calc kc
+  Bo <- B*omega/sqrt(Vlam)
+  if(Bo < 1){
+    return(list(t1 = NA, kc = NA, Vs = Vs, Vlam = Vlam, Bo = Bo))
+  }
+  kc <- (g_var/(g_var + Vs))*sqrt(2*Vs*log(Bo))
+
+  if(k<kc){
+    t1 <- Inf
+  }
+  else{
+    t1 <- -((g_var + Vs)/g_var)*log(1-(kc/k))
+  }
+
+  #calc t1
+  return(list(t1 = t1, kc = kc, Vs = Vs, Vlam = Vlam, Bo = Bo))
+}

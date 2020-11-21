@@ -18,12 +18,20 @@ gs <- function(genotypes,
                do.sexes = TRUE,
                init = F,
                verbose = T,
-               print.all.freqs = F){
+               print.all.freqs = F,
+               model = NULL){
   if(verbose){cat("Initializing...\n")}
   genotypes <- data.table::as.data.table(genotypes)
 
   if(is.null(phenotypes) | is.null(BVs)){
-    p <- get.pheno.vals(genotypes, meta$effect, h = h, phased = T)
+    if(is.null(model)){ # fectch from provided effects
+      p <- get.pheno.vals(genotypes, meta$effect, h = h, phased = T)
+    }
+    else{ # fetch from model
+      if(class(model) == "ranger"){
+        p <- fetch_phenotypes_ranger(genotypes, model, h)
+      }
+    }
     if(is.null(phenotypes)){
       phenotypes <- p$p
     }
@@ -110,10 +118,18 @@ gs <- function(genotypes,
     }
 
     #get phenotypic/genetic values
-    pa <- get.pheno.vals(genotypes, effect.sizes = meta$effect,
-                         h = h,
-                         hist.a.var = h.av,
-                         phased = T)
+    if(is.null(model)){
+      pa <- get.pheno.vals(genotypes, effect.sizes = meta$effect,
+                           h = h,
+                           hist.a.var = h.av,
+                           phased = T)
+    }
+    else{
+      if(class(model) == "ranger"){
+        suppressWarnings(pa <- fetch_phenotypes_ranger(genotypes, model, h, h.av))
+      }
+    }
+
     BVs <- pa$a
     phenotypes <- pa$p
 
@@ -485,38 +501,12 @@ gs_breeders <- function(phenotypes, h, B, K,
 }
 
 
+gs_random_forest <- function(phenotypes, h, model, var.theta, gens,
+                             growth.function = function(n) logistic_growth(n, 500, 2),
+                             survival.function = function(phenotypes, opt_pheno, ...) BL_survival(phenotypes, opt_pheno, omega = 1),
+                             selection.shift.function = function(opt, iv) optimum_constant_slide(opt, iv, 0.3),
+                             rec.dist = function(n) rpois(n, lambda = 1)){
 
-# Function to calculate the estimated time untill a population begins to crash (growth rate less than one) based on Burger and Lynch 1995.
-#    g_var: addative genetic variance
-#    e_var: environmental variance
-#    omega: width of the fitness function, usually given as omega^2
-#    k: rate of environmental change in phenotypic standard deviations
-#    B: mean number of offspring per individual
-#    Ne: effective population size
-#    theta_var: environmental stochasticity
-B_L_t1_func <- function(g_var, e_var, omega, k, B, Ne, theta_var){
-  # calc Vs
-  Vs <- (omega^2) + e_var
 
-  # calc Vlam
-  # simplified: Vlam = (Vs*(1+2*Ne))/2*Ne + (((1+2*Vs)*(g_var+theta_var))/2*Vs)
-  V_gt <- (Vs/(2*Ne)) + (g_var*theta_var)/(2*Vs)
-  Vlam <- Vs + g_var + V_gt + theta_var
 
-  #calc kc
-  Bo <- B*omega/sqrt(Vlam)
-  if(Bo < 1){
-    return(list(t1 = NA, kc = NA, Vs = Vs, Vlam = Vlam, Bo = Bo))
-  }
-  kc <- (g_var/(g_var + Vs))*sqrt(2*Vs*log(Bo))
-
-  if(k<kc){
-    t1 <- Inf
-  }
-  else{
-    t1 <- -((g_var + Vs)/g_var)*log(1-(kc/k))
-  }
-
-  #calc t1
-  return(list(t1 = t1, kc = kc, Vs = Vs, Vlam = Vlam, Bo = Bo))
 }

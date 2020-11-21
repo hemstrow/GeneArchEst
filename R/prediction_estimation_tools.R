@@ -239,6 +239,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
 
     t.eff <- data.frame(phenotype = phenotypes, stringsAsFactors = F)
     t.eff <- cbind(t.eff, t.x)
+    colnames(t.eff)[-1] <- paste0("m", 1:ncol(t.x))
   }
 
   else if(prediction.program == "GMMAT"){
@@ -344,11 +345,11 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     # run the randomForest/jungle
     if(ncol(t.eff) - 1 >= 10000){
       rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff, mtry = mtry,
-                           num.trees = ntree, importance = "permutation", verbose = T, save.memory = T, num.threads = par)
+                           num.trees = ntree, verbose = T, save.memory = T, num.threads = par)
     }
     else{
       rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff,
-                           mtry = mtry, num.trees = ntree, importance = "permutation", verbose = T, num.threads = par)
+                           mtry = mtry, num.trees = ntree, verbose = T, num.threads = par)
     }
 
     return(list(x = x, phenotypes = r.ind.effects, meta = meta, prediction.program = "ranger",
