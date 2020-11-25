@@ -501,12 +501,74 @@ gs_breeders <- function(phenotypes, h, B, K,
 }
 
 
-gs_random_forest <- function(phenotypes, h, model, var.theta, gens,
-                             growth.function = function(n) logistic_growth(n, 500, 2),
-                             survival.function = function(phenotypes, opt_pheno, ...) BL_survival(phenotypes, opt_pheno, omega = 1),
-                             selection.shift.function = function(opt, iv) optimum_constant_slide(opt, iv, 0.3),
-                             rec.dist = function(n) rpois(n, lambda = 1)){
+gs_outliers <- function(genotypes, pvals, scores, opt_prop_slide = function(opt) min(1, opt + opt*.5), gens, survival_sd, n = NULL, pcrit = 1*10^-5,
+                        growth.function = function(n) logistic_growth(n, 500, .5)){
+  # survival subfunciton
+  surv_func <- function(prop_high, opt_prop_high, survival_sd){
+    return(exp(-((prop_high - opt_prop_high)^2)/(2*survival_sd)))
+  }
+
+  # maf function
+  maf_func <- function(alleles){
+    rowSums(alleles)/(2*ncol(alleles))
+  }
 
 
+  #===============initialize=============
+  # find outliers and grab the genotypes
+  outliers <- which(pvals <= pcrit)
+  nloci <- length(outliers)
+  out.meta <- data.frame(out_num = 1:length(outliers), pval = pvals[outliers])
+  genotypes <- genotypes[outliers,]
 
+  # flip everything to track the allele that has a positive effect on phenotype
+  flip <- which(scores[outliers] < 0)
+  genotypes[flip,] <- (genotypes[flip,]*-1) + 1
+
+  # get ready to track things for sims
+  alleles <- vector("list", gens)
+  alleles[[1]] <- t(convert_2_to_1_column(genotypes))
+
+  if(is.null(n)){
+    n <- ncol(genotypes)/2
+  }
+
+  # fill out starting conditions
+  out <- data.frame(n = numeric(gens + 1), mean_prop_high = numeric(gens + 1), opt_prop_high = numeric(gens + 1), var_prop_high = numeric(gens + 1))
+  out$n[1] <- n
+  maf <- maf_func(alleles[[1]])
+  prop_high <- colSums(alleles[[1]]/(nloci*2))
+  out$mean_prop_high[1] <- mean(prop_high)
+  out$opt_prop_high[1] <- out$mean_prop_high[1]
+  out$var_prop_high[1] <- var(prop_high)
+
+  #===============run sim==================
+  for(i in 2:(gens + 1)){
+    # survival
+    surv <- rbinom(out$n[i - 1], 1, surv_func(prop_high, out$opt_prop_high[i - 1], survival_sd))
+
+    # growth
+    out$n[i] <- round(growth.function(sum(surv)))
+
+    if(out$n[i] < 2){
+      out <- out[1:i,]
+      alleles <- alleles[1:i]
+      break
+    }
+
+    # alleles for next generation
+    maf <- maf_func(alleles[[i-1]][,which(surv == 1)])
+    alleles[[i]] <- rbinom(out$n[i]*nloci, 2, maf)
+    alleles[[i]] <- matrix(alleles[[i]], nloci)
+
+    # update results
+    prop_high <- colSums(alleles[[i]])/(nloci*2)
+    out$mean_prop_high[i] <- mean(prop_high)
+    out$var_prop_high[i] <- var(prop_high)
+    out$opt_prop_high[i] <- opt_prop_slide(out$opt_prop_high[i - 1])
+
+  }
+
+  #==============return==========
+  return(list(demographics = out, alleles = alleles))
 }
