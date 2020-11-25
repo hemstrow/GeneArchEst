@@ -526,8 +526,7 @@ gs_outliers <- function(genotypes, pvals, scores, opt_prop_slide = function(opt)
   genotypes[flip,] <- (genotypes[flip,]*-1) + 1
 
   # get ready to track things for sims
-  alleles <- vector("list", gens)
-  alleles[[1]] <- t(convert_2_to_1_column(genotypes))
+  alleles<- t(convert_2_to_1_column(genotypes))
 
   if(is.null(n)){
     n <- ncol(genotypes)/2
@@ -536,11 +535,14 @@ gs_outliers <- function(genotypes, pvals, scores, opt_prop_slide = function(opt)
   # fill out starting conditions
   out <- data.frame(n = numeric(gens + 1), mean_prop_high = numeric(gens + 1), opt_prop_high = numeric(gens + 1), var_prop_high = numeric(gens + 1))
   out$n[1] <- n
-  maf <- maf_func(alleles[[1]])
-  prop_high <- colSums(alleles[[1]]/(nloci*2))
+  maf <- maf_func(alleles)
+  prop_high <- colSums(alleles/(nloci*2))
   out$mean_prop_high[1] <- mean(prop_high)
   out$opt_prop_high[1] <- out$mean_prop_high[1]
   out$var_prop_high[1] <- var(prop_high)
+  maf_output <- as.data.frame(matrix(0, gens, nloci))
+  maf_output[1,] <- maf
+  colnames(maf_output) <- paste0("locus_", 1:nloci)
 
   #===============run sim==================
   for(i in 2:(gens + 1)){
@@ -552,23 +554,23 @@ gs_outliers <- function(genotypes, pvals, scores, opt_prop_slide = function(opt)
 
     if(out$n[i] < 2){
       out <- out[1:i,]
-      alleles <- alleles[1:i]
+      maf_output <- maf_output[1:i,]
       break
     }
 
     # alleles for next generation
-    maf <- maf_func(alleles[[i-1]][,which(surv == 1)])
-    alleles[[i]] <- rbinom(out$n[i]*nloci, 2, maf)
-    alleles[[i]] <- matrix(alleles[[i]], nloci)
+    maf <- maf_func(alleles[,which(surv == 1), drop = F])
+    alleles <- rbinom(out$n[i]*nloci, 2, maf)
+    alleles <- matrix(alleles, nloci)
 
     # update results
-    prop_high <- colSums(alleles[[i]])/(nloci*2)
+    prop_high <- colSums(alleles)/(nloci*2)
     out$mean_prop_high[i] <- mean(prop_high)
     out$var_prop_high[i] <- var(prop_high)
     out$opt_prop_high[i] <- opt_prop_slide(out$opt_prop_high[i - 1])
-
+    maf_output[i,] <- maf
   }
 
   #==============return==========
-  return(list(demographics = out, alleles = alleles))
+  return(list(demographics = out, maf = maf_output, final_genotypes = alleles))
 }
