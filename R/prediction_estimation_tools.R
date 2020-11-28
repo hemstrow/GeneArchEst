@@ -427,7 +427,7 @@ pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT
 
   #============G prep or import===========
   if(is.null(pass_G)){
-    G <- make_G(xt, maf, phased, par)
+    G <- make_G(xt, maf, phased = F, par)
   }
   else{
     G <- pass_G
@@ -455,7 +455,12 @@ pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT
       }
     }
 
-    bigstatsr::big_write(xt, file = "asso_in.txt", sep = "\t")
+    if("FBM" %in% class(xt)){
+      bigstatsr::big_write(xt, file = "asso_in.txt", sep = "\t")
+    }
+    else{
+      data.table::fwrite(xt, "asso_in.txt" ,sep = "\t")
+    }
     GMMAT_infile <- "asso_in.txt"
   }
 

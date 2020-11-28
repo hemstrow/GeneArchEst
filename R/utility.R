@@ -810,14 +810,6 @@ make_G <- function(ind.genos, maf = 0.05, phased = F, par = 1){
   if(phased){
     ind.genos <- convert_2_to_1_column(ind.genos)
   }
-  else{
-    if(class(ind.genos) == "FBM"){
-      ind.genos <- bigstatsr::big_transpose(ind.genos)
-    }
-    else{
-      ind.genos <- t(ind.genos)
-    }
-  }
 
   if(class(ind.genos) == "FBM"){
     return(make_yang_G_FBM(ind.genos, maf, par))

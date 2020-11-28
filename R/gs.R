@@ -19,7 +19,7 @@ gs <- function(genotypes,
                init = F,
                verbose = T,
                print.all.freqs = F,
-               model = NULL){
+               model = NULL, K_thin_post_surv = NULL){
   if(verbose){cat("Initializing...\n")}
   genotypes <- data.table::as.data.table(genotypes)
 
@@ -98,6 +98,13 @@ gs <- function(genotypes,
     #if the population has died out, stop.
     if(sum(s) <= 1){
       break
+    }
+
+    # if doing carrying capacity on BREEDERS, not offspring, thin to K here.
+    if(!is.null(K_thin_post_surv)){
+      if(sum(s) > K_thin_post_surv){
+        s[which(s == 1)][sample(sum(s), K_thin_post_surv, F)] <- 0
+      }
     }
 
     #what is the pop size after growth?
@@ -222,6 +229,10 @@ sample_joint_quantile <- function(n, reg){
 #' @export
 logistic_growth <- function(n, K, r, ...){
   return((K*n*exp(r))/(K + n*(exp(r*1) - 1)))
+}
+
+BL_growth <- function(n, B, ...){
+  return(B*n)
 }
 
 #' Calculate survivability probabilities using a scaled normal distribution.
