@@ -25,7 +25,11 @@ sim_gen(
   maf = 0.05,
   pass_windows = NULL,
   pass_G = NULL,
-  GMMAT_infile = NULL
+  GMMAT_infile = NULL,
+  reg_res = NULL,
+  find_similar_effects = F,
+  real_effects = NULL,
+  save_effects = F
 )
 }
 \arguments{
@@ -46,8 +50,10 @@ only supports gwas.}
 \item{effect_distribution}{function, default \code{\link{rbayesB}}. The effect size distribution to use.}
 
 \item{parameter_distributions}{list containing named functions, default
-  list(pi = function(x) rbeta(x, 25, 1), d.f = function(x) runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3)*100).
-  Named functions giving the distributions from which to draw effect_size distribution hyperparameters.
+list(pi = function(x) rbeta(x, 25, 1), d.f = function(x) runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3)*100).
+Named functions giving the distributions from which to draw effect_size distribution hyperparameters.}
+
+\item{save_effects}{character or FALSE, default FALSE. If true, simulated effects will be saved to filepath provided here.
 
 Uses the provided}
 }

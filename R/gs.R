@@ -94,7 +94,7 @@ gs <- function(genotypes,
 
     #survival:
     s <- rbinom(out[(i-1),1], 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
-                survival.function(phenotypes, t.opt, var = h.pv)) # calling the function in this way ensures that individuals with phenotypes at the optimum have a survival probability of whatever is set in the function.
+                survival.function(phenotypes, t.opt))
     #if the population has died out, stop.
     if(sum(s) <= 1){
       break
@@ -231,6 +231,7 @@ logistic_growth <- function(n, K, r, ...){
   return((K*n*exp(r))/(K + n*(exp(r*1) - 1)))
 }
 
+#' @export
 BL_growth <- function(n, B, ...){
   return(B*n)
 }
@@ -274,8 +275,21 @@ normal_survival <- function(phenotypes, opt_pheno, var, max.survival = .5, ...){
 #' @param phenotypes numeric. Vector of phenotypes of individuals.
 #' @param opt_pheno numeric. Optimum phenotype this generation.
 #' @param omega numeric. Strength of stabilizing selection. Smaller numbers mean stronger selection.
+#'
+#' @export
 BL_survival <- function(phenotypes, opt_pheno, omega, ...){
   exp(-((phenotypes - opt_pheno)^2)/(2*omega^2))
+}
+
+#' @export
+prop_survival <- function(prop_high, opt_prop_high, omega){
+  return(exp(-((prop_high - opt_prop_high)^2)/(2*omega^2)))
+}
+
+#' @export
+prop_survival_scaled_omega <- function(prop_high, opt_prop_high, h.av, omega){
+  omega <- omega*h.av
+  return(exp(-((prop_high - opt_prop_high)^2)/(2*omega^2)))
 }
 
 #' Increase the selection optimum by a given percentage of starting variance each generation.
@@ -287,6 +301,21 @@ BL_survival <- function(phenotypes, opt_pheno, omega, ...){
 #' @export
 optimum_constant_slide <- function(opt, iv, slide = 0.3, ...){
   return(opt + iv*slide)
+}
+
+#' @export
+optimum_fixed_slide <- function(opt, slide = 0.3, ...){
+  return(opt + slide)
+}
+
+#' @export
+optimum_proportion_constant_slide <- function(opt, iv, slide, ...){
+  return(min(1, opt + iv*slide))
+}
+
+#' @export
+optimum_proportion_fixed_slide <- function(opt, slide, ...){
+  return(min(1, opt + opt*slide))
 }
 
 #' Increases the selection optimum according to logistic growth.
@@ -319,10 +348,6 @@ optimum_logistic_slide <- function(opt, init_opt, scale, r, ...){
 #' overtime as the optimum phenotype changes. While some processes are \emph{modeled} as stochastic,
 #' this returns the \emph{mean} population sizes over time, and so is not stochastic itself.
 #'
-#' Note that the phenotypic variance is
-#' scaled such that the enivironmental variance should equal 1 given the provided h.
-#' k, var.theta, and omega should be scaled to match this.
-#'
 #' If nloci, alpha, and mu are all provided, the stochastic house of cards
 #' approximation of genetic variance is used to approximate changes in genetic variance
 #' each generation based \emph{only} on changes in effective population size. Otherwise,
@@ -335,12 +360,14 @@ optimum_logistic_slide <- function(opt, init_opt, scale, r, ...){
 #' @param K numeric. Carrying capacity. Individuals surviving selection will be randomly culled to this number.
 #' @param omega numeric. Width of the selection function. Smaller numbers equate to stronger selection around the optimum.
 #' @param var.theta numeric. Variance of the stochastic selection optimum.
-#' @param k numeric. Proportion by which the optimum phenotype increases each generation (where mean(opt) = k*t).
+#' @param k numeric. Proportion of the initial additive genetiv variance by which the optimum phenotype increases each generation (where mean(opt) = k*t).
 #' @param gens numeric, default Inf. Number of generations to iterate.
 #' @param n numeric, default NULL. Initial population size. If null, equal to the number of provided phenotypes.
 #' @param nloci numeric, default NULL. Number of effective loci. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
 #' @param alpha numeric, default NULL. Standard deviation of the effect of new mutations. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
 #' @param mu numeric, default NULL. Mutation rate. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
+#'
+#' @export
 gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL, nloci = NULL, alpha = NULL, mu = NULL){
   # calculate variances
   p_var <- var(phenotypes)
@@ -348,10 +375,29 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   e_var <- p_var - g_var
 
   # standardize such that e_var = 1
-  p_var <- p_var/e_var
-  g_var <- g_var/e_var
-  e_var <- e_var/e_var
+  omega_shift_func <- function(gvar1, evar1, omega1, gvar2, evar2){
+    omega1_var <- omega1^2
+    omega2_var <- (omega1_var*(evar2 + gvar2))/(evar1 + gvar1)
+    return(return(sqrt(omega2_var)))
+  }
 
+  ## standardize variances
+  p_var.n <- p_var/e_var
+  g_var.n <- g_var/e_var
+  e_var.n <- e_var/e_var
+  var.theta <- var.theta/e_var
+
+  ## standardize omega
+  omega.n <- omega_shift_func(g_var, e_var, omega, g_var.n, e_var.n)
+
+  ## update
+  p_var <- p_var.n
+  g_var <- g_var.n
+  e_var <- e_var.n
+  omega <- omega.n
+
+  ## standardize k
+  k <- k*g_var
 
   # iterate across time to get pop sizes
   t <- 1
@@ -410,10 +456,6 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
 #' Uses several equations from Burger and Lynch 1995 to calculate ne and additive genetic variance,
 #' but otherwise simulates purely based on the Breeder's Equation.
 #'
-#' Note that the phenotypic variance is
-#' scaled such that the enivironmental variance should equal 1 given the provided h.
-#' k, var.theta, and omega should be scaled to match this.
-#'
 #' If nloci, alpha, and mu are all provided, the stochastic house of cards
 #' approximation of genetic variance is used to approximate changes in genetic variance
 #' each generation based \emph{only} on changes in effective population size. Otherwise,
@@ -426,12 +468,14 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
 #' @param K numeric. Carrying capacity. Individuals surviving selection will be randomly culled to this number.
 #' @param omega numeric. Width of the selection function. Smaller numbers equate to stronger selection around the optimum.
 #' @param var.theta numeric. Variance of the stochastic selection optimum.
-#' @param k numeric. Proportion by which the optimum phenotype increases each generation (where mean(opt) = k*t).
+#' @param k numeric. Proportion of the initial additive genetiv variance by which the optimum phenotype increases each generation (where mean(opt) = k*t).
 #' @param gens numeric, default Inf. Number of generations to iterate.
 #' @param n numeric, default NULL. Initial population size. If null, equal to the number of provided phenotypes.
 #' @param nloci numeric, default NULL. Number of effective loci. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
 #' @param alpha numeric, default NULL. Standard deviation of the effect of new mutations. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
 #' @param mu numeric, default NULL. Mutation rate. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
+#'
+#' @export
 gs_breeders <- function(phenotypes, h, B, K,
                         omega, var.theta, k, gens = Inf, n = NULL,
                         nloci = NULL, alpha = NULL, mu = NULL){
@@ -440,11 +484,8 @@ gs_breeders <- function(phenotypes, h, B, K,
   g_var <- h * p_var
   e_var <- p_var - g_var
 
-  # standardize such that e_var = 1
-  p_var <- p_var/e_var
-  g_var <- g_var/e_var
-  e_var <- e_var/e_var
-
+  ## standardize k
+  k <- k*g_var
 
   # iterate across time to get pop sizes
   t <- 1
@@ -494,11 +535,10 @@ gs_breeders <- function(phenotypes, h, B, K,
       ne <- ((2*B)/((2*B) - 1))*nsurv # BL eq 13.
       g_var <- (4*nloci*mu*ne*alpha^2)/(1 + ((ne*alpha^2)/Vs)) # BL eq 14.
 
-      phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, g_var + e_var)
+      phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, sqrt(g_var + e_var))
     }
     else{
-      phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, p_var)
-
+      phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, sqrt(p_var))
     }
 
     Rs <- c(Rs, R)
@@ -511,14 +551,15 @@ gs_breeders <- function(phenotypes, h, B, K,
   return(out)
 }
 
-
-gs_outliers <- function(genotypes, pvals, scores, opt_prop_slide = function(opt) min(1, opt + opt*.5), gens, survival_sd, n = NULL, pcrit = 1*10^-5,
-                        growth.function = function(n) logistic_growth(n, 500, .5)){
+#' @export
+gs_outliers <- function(genotypes, pvals, scores, gens,
+                        opt_prop_slide = function(opt) min(1, opt + opt*.5),
+                        surivival.function = function(prop_high, opt_prop_high) prop_survival(prop_high, opt_prop_high, .1),
+                        growth.function = function(n) logistic_growth(n, 500, .5),
+                        n = NULL, pcrit = 1*10^-5,
+                        K_thin_post_surv = NULL){
   # survival subfunciton
-  surv_func <- function(prop_high, opt_prop_high, survival_sd){
-    return(exp(-((prop_high - opt_prop_high)^2)/(2*survival_sd)))
-  }
-
+  surv_func <- surivival.function
   # maf function
   maf_func <- function(alleles){
     rowSums(alleles)/(2*ncol(alleles))
@@ -544,7 +585,7 @@ gs_outliers <- function(genotypes, pvals, scores, opt_prop_slide = function(opt)
   }
 
   # fill out starting conditions
-  out <- data.frame(n = numeric(gens + 1), mean_prop_high = numeric(gens + 1), opt_prop_high = numeric(gens + 1), var_prop_high = numeric(gens + 1))
+  out <- data.frame(n = numeric(gens + 1), mean_prop_high = numeric(gens + 1), opt_prop_high = numeric(gens + 1), var_prop_high = numeric(gens + 1), gen = 1:(gens + 1))
   out$n[1] <- n
   maf <- maf_func(alleles)
   prop_high <- colSums(alleles/(nloci*2))
@@ -558,7 +599,14 @@ gs_outliers <- function(genotypes, pvals, scores, opt_prop_slide = function(opt)
   #===============run sim==================
   for(i in 2:(gens + 1)){
     # survival
-    surv <- rbinom(out$n[i - 1], 1, surv_func(prop_high, out$opt_prop_high[i - 1], survival_sd))
+    surv <- rbinom(out$n[i - 1], 1, surv_func(prop_high, out$opt_prop_high[i - 1], h.av = out$var_prop_high[1]))
+
+    # if doing carrying capacity on BREEDERS, not offspring, thin to K here.
+    if(!is.null(K_thin_post_surv)){
+      if(sum(surv) > K_thin_post_surv){
+        surv[which(surv == 1)][sample(sum(surv), K_thin_post_surv, F)] <- 0
+      }
+    }
 
     # growth
     out$n[i] <- round(growth.function(sum(surv)))
@@ -578,7 +626,7 @@ gs_outliers <- function(genotypes, pvals, scores, opt_prop_slide = function(opt)
     prop_high <- colSums(alleles)/(nloci*2)
     out$mean_prop_high[i] <- mean(prop_high)
     out$var_prop_high[i] <- var(prop_high)
-    out$opt_prop_high[i] <- opt_prop_slide(out$opt_prop_high[i - 1])
+    out$opt_prop_high[i] <- opt_prop_slide(out$opt_prop_high[i - 1], iv = out$var_prop_high[1])
     maf_output[i,] <- maf
   }
 
