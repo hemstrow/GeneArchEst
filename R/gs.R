@@ -210,6 +210,7 @@ gs <- function(genotypes,
 #' @return A data.frame containing the sampled hyperparameter values.
 #'
 #' @author William Hemstrom
+#' @export
 sample_joint_quantile <- function(n, reg){
   res <- reg$joint_quantile_long[sample(1:nrow(reg$joint_quantile_long), n, T, reg$joint_quantile_long$norm_joint_quantile), c(1, 4)]
   colnames(res) <- c(reg$independent, reg$dependent)
