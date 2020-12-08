@@ -644,9 +644,7 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
                                     additional_args = NULL){
   #===============sanity checks===========
   # make a vcf if it doesn't exist
-  if(!file.exists("data.vcf")){
-    make_vcf(x, meta)
-  }
+  make_vcf(x, meta)
 
   #===============construct call==========
   old.scipen <- getOption("scipen")
