@@ -32,12 +32,16 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                                                   scale = function(x) rbeta(x, 1, 3)*100),
                                    h_dist = function(x) rep(.5, x),
                                    center = T,
-                                   par = F, phased = F){
+                                   par = F, phased = F, save_effects = F){
+  browser()
 
   #============ABC_scheme function for one rep=============
   scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center, phased = F){
     pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center, phased = phased)
     dist <- compare_distributions(phenotypes, pseudo$p)
+    if(save_effects){
+      return(list(dist = dist, effects = pseudo$e))
+    }
     return(dist)
   }
 
@@ -60,6 +64,9 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
   # initialize storage
   dist_output <-  matrix(0, iters, ncol = length(names_diff_stats))
   colnames(dist_output) <- names_diff_stats
+  if(save_effects){
+    effect_output <- matrix(0, iters, ncol = nrow(x))
+  }
 
   #============ABC loop===================
   # run the ABC
@@ -68,20 +75,40 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
 
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
-      dist_output[i,] <- scheme_D(x = x,
-                                  phenotypes = phenotypes,
-                                  effect_distribution = effect_distribution,
-                                  parameters = as.list(run_parameters[i,,drop = F]),
-                                  h = h[i],
-                                  center = center,
-                                  phased = phased)
+
+      d <- scheme_D(x = x,
+                    phenotypes = phenotypes,
+                    effect_distribution = effect_distribution,
+                    parameters = as.list(run_parameters[i,,drop = F]),
+                    h = h[i],
+                    center = center,
+                    phased = phased)
+
+      if(save_effects){
+        dist_output[i,] <- d$dist
+        effect_output[i,] <- d$effects
+
+      }
+      else{
+        dist_output[i,] <- d
+      }
     }
-    return(cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)))
+    if(save_effects){
+      return(list(dist = cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)), effects = effect_output))
+    }
+    else{
+      return(cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)))
+    }
   }
 
 
   # parallel
   else{
+    if(save_effects){
+      warning("For now, effects cannot be saved if run in parallel.\n")
+      save_effects <- F
+    }
+
     cl <- snow::makeSOCKcluster(par)
     doSNOW::registerDoSNOW(cl)
 
