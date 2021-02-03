@@ -33,7 +33,6 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                    h_dist = function(x) rep(.5, x),
                                    center = T,
                                    par = F, phased = F, save_effects = F){
-  browser()
 
   #============ABC_scheme function for one rep=============
   scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center, phased = F){
