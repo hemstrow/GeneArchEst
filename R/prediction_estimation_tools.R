@@ -32,7 +32,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  standardize = FALSE,
                  center = FALSE,
                  save.meta = TRUE, par = NULL, pi = NULL, pass_G = NULL, phased = F,
-                 verbose = T){
+                 verbose = TRUE){
   #============sanity checks================================
   # check that all of the required arguments are provided for the prediction.model we are running
   if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger", "GMMAT")){
@@ -201,6 +201,12 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
   x <- x$x
 
+  if(phased){
+    ind.genos <- convert_2_to_1_column(x) # rows are individuals, columns are SNPs
+  }
+  else{
+    ind.genos <- t(x)
+  }
 
   if(prediction.program == "JWAS"){
     odw <- getwd()
@@ -216,7 +222,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     # make an individual genotype file if it isn't already constructed.
     if(make.ig){
       # convert format
-      ind.genos <- convert_2_to_1_column(x)
       ind.genos <- cbind(samp = 1:nrow(ind.genos), ind.genos) # add sample info
       colnames(ind.genos) <- c("samp", paste0("m", 1:(ncol(ind.genos)-1)))
       data.table::fwrite(ind.genos, "ig.txt", sep = " ", col.names = T)
@@ -224,8 +229,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
 
   else if(prediction.program == "BGLR"){
-    # convert
-    ind.genos <- convert_2_to_1_column(x) # rows are individuals, columns are SNPs
     colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
 
@@ -234,7 +237,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
 
   else if(prediction.program == "ranger"){
-    t.x <- convert_2_to_1_column(x) # add sample info
+    t.x <- ing.genos # add sample info
     colnames(t.x) <- paste0("m", 1:ncol(t.x))
 
     t.eff <- data.frame(phenotype = phenotypes, stringsAsFactors = F)
@@ -243,12 +246,11 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
 
   else if(prediction.program == "GMMAT"){
-    ind.genos <- convert_2_to_1_column(x)
     colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
 
     if(is.null(pass_G)){
-      G <- make_G(ind.genos, maf.filt, phased, par)
+      G <- make_G(ind.genos, maf.filt, phased = FALSE, par) # note, already unphased if phased
     }
     else{
       G <- pass_G

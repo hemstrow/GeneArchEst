@@ -566,7 +566,6 @@ gs_outliers <- function(genotypes, pvals, scores, gens,
     rowSums(alleles)/(2*ncol(alleles))
   }
 
-
   #===============initialize=============
   # find outliers and grab the genotypes
   outliers <- which(pvals <= pcrit)

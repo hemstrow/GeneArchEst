@@ -189,7 +189,7 @@ euclid.dist <- function(o, p){
 #' generate psuedo effects using passed parameters, an effect size distribution, and heritability.
 generate_pseudo_effects <- function(x, effect_distribution, parameters, h, center = T, phased = F){
   pseudo_effects <- do.call(effect_distribution, c(list(n = nrow(x)), parameters))
-  pseudo_phenos <- get.pheno.vals(x, pseudo_effects, h, phased)$p
+  pseudo_phenos <- get.pheno.vals(x = x, effect.sizes = pseudo_effects, h = h, phased = phased)$p
   if(center){
     pseudo_phenos <- pseudo_phenos - mean(pseudo_phenos)
   }

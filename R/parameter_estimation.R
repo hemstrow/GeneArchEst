@@ -43,7 +43,8 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
     else{
       x_pi <- pred(x, phenotypes = phenos,
                    prediction.program = "GMMAT",
-                   maf.filt = F, runID = "gmmat_real")$e.eff$PVAL
+                   maf.filt = F, runID = "gmmat_real",
+                   pass_G = pass_G, center = center)$e.eff$PVAL
     }
 
 

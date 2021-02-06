@@ -123,7 +123,6 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
   rm(parms)
   h <- h_dist(iters)
 
-
   # can pass a g matrix forward once if doing gwas
   if(scheme == "gwas" & is.null(pass_G)){
     G <- make_G(x, maf, phased, par)
