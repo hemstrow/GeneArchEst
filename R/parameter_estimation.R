@@ -15,9 +15,9 @@
 
 calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme = "gwas", chr = "chr",
                                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
-                                    burnin = NULL, thin = NULL, chain_length = NULL, maf = 0, phased = F,
+                                    burnin = NULL, thin = NULL, chain_length = NULL, maf = 0, phased = FALSE,
                                     pass_windows = F, pass_G = NULL, GMMAT_infile = NULL,
-                                    find_similar_effects = F, real_effects = NULL, save_effects = F){
+                                    find_similar_effects = FALSE, real_effects = NULL, save_effects = FALSE){
   #===========functions to run gwas or gp=============
   gwas <- function(x, phenos, meta, windows, peak_delta, peak_pcut, chr, GMMAT_infile = NULL, pass_G = NULL){
     if(class(x) == "FBM"){
@@ -44,7 +44,7 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
       x_pi <- pred(x, phenotypes = phenos,
                    prediction.program = "GMMAT",
                    maf.filt = F, runID = "gmmat_real",
-                   pass_G = pass_G, center = center)$e.eff$PVAL
+                   pass_G = pass_G, center = center, phased = phased)$e.eff$PVAL
     }
 
 
@@ -160,7 +160,7 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
                                          importance = "permutation", scheme = "gwas",
                                          peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
                                          quantiles = seq(0 + .001, 1 - .001, by = .001), save_rf = FALSE,
-                                         pass_windows = F, pass_G = NULL, GMMAT_infile = NULL, phased = F,
+                                         pass_windows = NULL, pass_G = NULL, GMMAT_infile = NULL, phased = FALSE,
                                          ...){
   #==========rf construction, evaluation, and prediction subfunction==========
   make_and_predict_rf <- function(dat_test, dat_train, param_train, param_test, hyperparameter,

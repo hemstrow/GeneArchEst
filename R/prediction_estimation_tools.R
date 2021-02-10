@@ -201,12 +201,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
   x <- x$x
 
-  if(phased){
-    ind.genos <- convert_2_to_1_column(x) # rows are individuals, columns are SNPs
-  }
-  else{
-    ind.genos <- t(x)
-  }
+  ind.genos <- smart_transpose_and_unphase(x, phased)
 
   if(prediction.program == "JWAS"){
     odw <- getwd()
@@ -250,7 +245,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
 
     if(is.null(pass_G)){
-      G <- make_G(ind.genos, maf.filt, phased = FALSE, par) # note, already unphased if phased
+      G <- make_G(ind.genos, maf.filt, par)
     }
     else{
       G <- pass_G
@@ -289,7 +284,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     }
 
     # save the julia script
-    browser()
     writeLines(analysis.jl, "analysis.jl")
     system(julia.call)
 
@@ -419,17 +413,11 @@ pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT
                           phased = F, par = 1, center = T){
   #============transpose==================
   if(!is.null(x)){
-    if(phased == T){
-      xt <- convert_2_to_1_column(x)
-    }
-    else{
-      xt <- bigstatsr::big_transpose(x)
-    }
+    xt <- smart_transpose_and_unphase(x, phased)
   }
-
   #============G prep or import===========
   if(is.null(pass_G)){
-    G <- make_G(xt, maf, phased = F, par)
+    G <- make_G(xt, maf, par)
   }
   else{
     G <- pass_G

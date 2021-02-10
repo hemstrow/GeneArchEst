@@ -31,8 +31,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                                                   d.f = function(x) runif(x, 1, 100),
                                                                   scale = function(x) rbeta(x, 1, 3)*100),
                                    h_dist = function(x) rep(.5, x),
-                                   center = T,
-                                   par = F, phased = F, save_effects = F){
+                                   center = TRUE,
+                                   par = FALSE, phased = FALSE, save_effects = FALSE){
 
   #============ABC_scheme function for one rep=============
   scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center, phased = F){

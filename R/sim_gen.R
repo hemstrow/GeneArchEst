@@ -53,9 +53,9 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                     h_dist = function(x) rep(.5, x),
                     # burnin = burnin, thin = thin, chain_length = chain_length, method = "BayesB",
                     par = 1, joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
-                    peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, phased = F, maf = 0.05,
+                    peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, phased = FALSE, maf = 0.05,
                     pass_windows = NULL, pass_G = NULL, GMMAT_infile = NULL, reg_res = NULL,
-                    find_similar_effects = F, real_effects = NULL, save_effects = F){
+                    find_similar_effects = F, real_effects = NULL, save_effects = FALSE){
 
   #============schem functions for one simulation=============
   # gp <- function(x, pi, df, scale, method, t_iter, h, windows, center = center){
@@ -72,7 +72,7 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
   #   return(list(stats = stats, e = pseudo$e))
   # }
   gwas <- function(x, effect_distribution, parameters, h, center = center,
-                   t_iter, G, windows, phased = F, GMMAT_infile = NULL){
+                   t_iter, G, windows, phased = FALSE, GMMAT_infile = NULL){
 
     pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center, phased = phased)
 
@@ -89,7 +89,7 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
   }
 
   loop_func <- function(x, effect_distribution, parameters, scheme,
-                        t_iter, G = NULL, h, windows, center = center, phased = F){
+                        t_iter, G = NULL, h, windows, center = center, phased = FALSE){
     # if(scheme == "gp"){
     #   dist <- gp(x, pi, df, scale, method, t_iter, h, windows, center = center)
     # }
@@ -125,7 +125,8 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
 
   # can pass a g matrix forward once if doing gwas
   if(scheme == "gwas" & is.null(pass_G)){
-    G <- make_G(x, maf, phased, par)
+
+    G <- make_G(smart_transpose_and_unphase(x, phased), maf, par)
   }
   else if(scheme == "gwas" & !is.null(pass_G)){
     G <- pass_G
