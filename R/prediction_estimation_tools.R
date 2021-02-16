@@ -232,7 +232,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
 
   else if(prediction.program == "ranger"){
-    t.x <- ing.genos # add sample info
+    t.x <- ind.genos
     colnames(t.x) <- paste0("m", 1:ncol(t.x))
 
     t.eff <- data.frame(phenotype = phenotypes, stringsAsFactors = F)
