@@ -23,13 +23,20 @@ gs <- function(genotypes,
   if(verbose){cat("Initializing...\n")}
   genotypes <- data.table::as.data.table(genotypes)
 
+  # thin genotypes if possible
+  if("effect" %in% colnames(meta) & any(meta$effect != 0) & any(meta$effect == 0)){
+    zeros <- which(meta$effect == 0)
+    meta <- meta[-zeros,]
+    genotypes <- genotypes[-zeros,]
+  }
+
   if(is.null(phenotypes) | is.null(BVs)){
     if(is.null(model)){ # fectch from provided effects
       p <- get.pheno.vals(genotypes, meta$effect, h = h, phased = T)
     }
     else{ # fetch from model
       if(class(model) == "ranger"){
-        p <- fetch_phenotypes_ranger(genotypes, model, h)
+        p <- fetch_phenotypes_ranger(genotypes, model, h, phased = T)
       }
     }
     if(is.null(phenotypes)){
@@ -95,6 +102,7 @@ gs <- function(genotypes,
     #survival:
     s <- rbinom(out[(i-1),1], 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
                 survival.function(phenotypes, t.opt))
+
     #if the population has died out, stop.
     if(sum(s) <= 1){
       break
@@ -103,12 +111,13 @@ gs <- function(genotypes,
     # if doing carrying capacity on BREEDERS, not offspring, thin to K here.
     if(!is.null(K_thin_post_surv)){
       if(sum(s) > K_thin_post_surv){
-        s[which(s == 1)][sample(sum(s), K_thin_post_surv, F)] <- 0
+        s[which(s == 1)][sample(sum(s), sum(s) - K_thin_post_surv, F)] <- 0
       }
     }
 
     #what is the pop size after growth?
     out[i,1] <- round(growth.function(sum(s)))
+
 
     #make a new x with the survivors
     genotypes <- genotypes[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
