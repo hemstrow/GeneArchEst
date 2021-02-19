@@ -883,8 +883,8 @@ smart_transpose_and_unphase <- function(genotypes, phased){
   }
 }
 
-fetch_phenotypes_ranger <- function(genotypes, model, h, a.var = NULL){
-  tgt <- convert_2_to_1_column(genotypes)
+fetch_phenotypes_ranger <- function(genotypes, model, h, a.var = NULL, phased = T){
+  tgt <- smart_transpose_and_unphase(genotypes, phased)
   colnames(tgt) <- model$forest$independent.variable.names
   warning("Loci in genotypes assumed to be in same order as provided to random forest model.\n")
   a <- predict(model, data = tgt)$predictions
