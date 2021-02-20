@@ -1,5 +1,14 @@
 #=======function to do growth and selection=======
 # note: init means are we simply intiating a population under selection. We'll need to keep all markers if so.
+#' Simulate selection and population growth
+#'
+#' @param genotypes unphased matrix of genotypes, one row per snp and one column
+#'   per chromosome/gene copy. Copies from individuals must be sequential.
+#' @param meta data.frame of snp metadata, with the first column containing
+#'   chromosome info, the second containing position in base pairs, and the
+#'   third, named "effects" optionally containing effect sizes.
+#' @param chr.length numeric vector of chromosome lengths \emph{in the same
+#'   order as would be given by unique(meta[,1])}.
 #' @export
 gs <- function(genotypes,
                meta,
@@ -26,7 +35,15 @@ gs <- function(genotypes,
   # thin genotypes if possible
   if("effect" %in% colnames(meta) & any(meta$effect != 0) & any(meta$effect == 0)){
     zeros <- which(meta$effect == 0)
-    meta <- meta[-zeros,]
+    nmeta <- meta[-zeros,]
+    # if chromosomes are missing, need to remove them from
+    # the chr.length vector
+    missing.chrs <- which(!unique(meta[,1]) %in% unique(nmeta[,1])) # which are now missing?
+    if(length(missing.chrs) > 0){
+      chr.length <- chr.length[-missing.chrs]
+    }
+    meta <- nmeta
+    rm(nmeta)
     genotypes <- genotypes[-zeros,]
   }
 
