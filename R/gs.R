@@ -458,15 +458,15 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
 
     # growth
     nt <- Lt*n[t]
+    n <- c(n, nt)
     if(nt > K){nt <- K}
 
     # update
-    n <- c(n, nt)
     mean_phenos <- c(mean_phenos, Egt)
     V_mean_phenos <- c(V_mean_phenos, Vgt)
     lambdas <- c(lambdas, Lt)
     opt_pheno <- c(opt_pheno, k*t)
-    if(t > 1 & lambdas[t] == lambdas[t +1]){
+    if(t > 1 & lambdas[t] == lambdas[t + 1]){
       warning("Population sustainable: k is too small to cause extinction.\n")
       break
     }
@@ -538,7 +538,6 @@ gs_breeders <- function(phenotypes, h, B, K,
     nsurv <- sum(surv)
     if(nsurv > K){surv[sample(which(surv == 1), nsurv - K)] <- 0; nsurv <- K} # if we are above K, kill some more at random.
 
-    n <- c(n, sum(surv))
     opt <- c(opt, t_kt)
     new_mean_phenos <- mean(phenotypes[which(surv == 1)])
     mean_phenos <- c(mean_phenos, new_mean_phenos)
@@ -567,6 +566,8 @@ gs_breeders <- function(phenotypes, h, B, K,
     else{
       phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, sqrt(p_var))
     }
+    n <- c(n, length(phenotypes))
+
 
     Rs <- c(Rs, R)
     Ss <- c(Ss, S)
