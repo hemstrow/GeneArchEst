@@ -543,6 +543,7 @@ gs_breeders <- function(phenotypes, h, B, K,
     mean_phenos <- c(mean_phenos, new_mean_phenos)
 
     if(sum(surv) < 2){
+      n <- c(n, nsurv)
       Rs <- c(Rs, NA)
       Ss <- c(Ss, NA)
       break
