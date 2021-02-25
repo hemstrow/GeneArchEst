@@ -437,6 +437,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   if(is.null(n)){
     n <- length(phenotypes)
   }
+  out_n <- n
 
   while(n[t] >= 2 & t <= gens){
     ne <- ((2*B)/((2*B) - 1))*n[t] # BL eq 13.
@@ -458,8 +459,9 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
 
     # growth
     nt <- Lt*n[t]
-    n <- c(n, nt)
+    out_n <- c(out_n, nt)
     if(nt > K){nt <- K}
+    n <- c(n, nt)
 
     # update
     mean_phenos <- c(mean_phenos, Egt)
@@ -473,7 +475,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
     t <- t + 1
   }
 
-  out <- data.frame(t = 1:length(n), n = n, mean_pheno = mean_phenos,
+  out <- data.frame(t = 1:length(n), n = out_n, mean_pheno = mean_phenos,
                     V_mean_pheno = V_mean_phenos, lambda = lambdas, opt_pheno = opt_pheno)
   return(out)
 }
