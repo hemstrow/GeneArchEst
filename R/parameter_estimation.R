@@ -15,7 +15,7 @@
 
 calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme = "gwas", chr = "chr",
                                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
-                                    burnin = NULL, thin = NULL, chain_length = NULL, maf = 0, phased = FALSE,
+                                    burnin = NULL, thin = NULL, chain_length = NULL, maf = 0.05, phased = FALSE,
                                     pass_windows = F, pass_G = NULL, GMMAT_infile = NULL,
                                     find_similar_effects = FALSE, real_effects = NULL, save_effects = FALSE){
   #===========functions to run gwas or gp=============
@@ -44,7 +44,7 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
       x_pi <- pred(x, phenotypes = phenos,
                    prediction.program = "GMMAT",
                    maf.filt = F, runID = "gmmat_real",
-                   pass_G = pass_G, center = center, phased = phased)$e.eff$PVAL
+                   pass_G = pass_G, center = center, phased = phased, maf.G = maf)$e.eff$PVAL
     }
 
 
@@ -161,6 +161,7 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
                                          peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50,
                                          quantiles = seq(0 + .001, 1 - .001, by = .001), save_rf = FALSE,
                                          pass_windows = NULL, pass_G = NULL, GMMAT_infile = NULL, phased = FALSE,
+                                         maf = 0.05,
                                          ...){
   #==========rf construction, evaluation, and prediction subfunction==========
   make_and_predict_rf <- function(dat_test, dat_train, param_train, param_test, hyperparameter,
@@ -247,9 +248,9 @@ hyperparameter_random_forest <- function(x, meta, phenos, sims, hyperparameter_t
   #===========get stats for the real data==========
   cat("Getting descriptive statistics for the real data...\n")
   stats <- calc_distribution_stats(x = x, meta = meta, phenos = phenos, center = center, scheme = scheme,
-                                   chr = colnames(meta)[1],
-                                   peak_delta, peak_pcut, window_sigma, phased = phased,
-                                   pass_windows = pass_windows, pass_G = pass_G, GMMAT_infile = GMMAT_infile)
+                                   chr = colnames(meta)[1],peak_delta = peak_delta, peak_pcut = peak_pcut,
+                                   window_sigma =  window_sigma, phased = phased, pass_windows = pass_windows,
+                                   pass_G = pass_G, GMMAT_infile = GMMAT_infile, maf = maf)
   cat("Done!\n")
   #===========prepare data=========
   # pull parameters to estimate and transform if requested

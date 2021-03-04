@@ -23,7 +23,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  burnin = 5000,
                  thin = 100,
                  prediction.model = NULL,
-                 make.ig = TRUE, sub.ig = FALSE, maf.filt = 0.05,
+                 make.ig = TRUE, sub.ig = FALSE, maf.filt = 0, maf.G = 0.05,
                  julia.path = "julia", runID = "r1", qtl_only = FALSE,
                  pass.resid = FALSE, pass.var = FALSE,
                  ntree = 50000,
@@ -245,7 +245,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
 
     if(is.null(pass_G)){
-      G <- make_G(ind.genos, maf.filt, par)
+      G <- make_G(ind.genos, maf = maf.G, par = par)
     }
     else{
       G <- pass_G
@@ -417,7 +417,7 @@ pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT
   }
   #============G prep or import===========
   if(is.null(pass_G)){
-    G <- make_G(xt, maf, par)
+    G <- make_G(xt, maf =  maf, par = par)
   }
   else{
     G <- pass_G
