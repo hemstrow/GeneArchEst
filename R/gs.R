@@ -1,5 +1,14 @@
 #=======function to do growth and selection=======
 # note: init means are we simply intiating a population under selection. We'll need to keep all markers if so.
+#' Simulate selection and population growth
+#'
+#' @param genotypes unphased matrix of genotypes, one row per snp and one column
+#'   per chromosome/gene copy. Copies from individuals must be sequential.
+#' @param meta data.frame of snp metadata, with the first column containing
+#'   chromosome info, the second containing position in base pairs, and the
+#'   third, named "effects" optionally containing effect sizes.
+#' @param chr.length numeric vector of chromosome lengths \emph{in the same
+#'   order as would be given by unique(meta[,1])}.
 #' @export
 gs <- function(genotypes,
                meta,
@@ -23,13 +32,28 @@ gs <- function(genotypes,
   if(verbose){cat("Initializing...\n")}
   genotypes <- data.table::as.data.table(genotypes)
 
+  # thin genotypes if possible
+  if("effect" %in% colnames(meta) & any(meta$effect != 0) & any(meta$effect == 0)){
+    zeros <- which(meta$effect == 0)
+    nmeta <- meta[-zeros,]
+    # if chromosomes are missing, need to remove them from
+    # the chr.length vector
+    missing.chrs <- which(!unique(meta[,1]) %in% unique(nmeta[,1])) # which are now missing?
+    if(length(missing.chrs) > 0){
+      chr.length <- chr.length[-missing.chrs]
+    }
+    meta <- nmeta
+    rm(nmeta)
+    genotypes <- genotypes[-zeros,]
+  }
+
   if(is.null(phenotypes) | is.null(BVs)){
     if(is.null(model)){ # fectch from provided effects
       p <- get.pheno.vals(genotypes, meta$effect, h = h, phased = T)
     }
     else{ # fetch from model
       if(class(model) == "ranger"){
-        p <- fetch_phenotypes_ranger(genotypes, model, h)
+        p <- fetch_phenotypes_ranger(genotypes, model, h, phased = T)
       }
     }
     if(is.null(phenotypes)){
@@ -95,6 +119,7 @@ gs <- function(genotypes,
     #survival:
     s <- rbinom(out[(i-1),1], 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
                 survival.function(phenotypes, t.opt))
+
     #if the population has died out, stop.
     if(sum(s) <= 1){
       break
@@ -103,12 +128,13 @@ gs <- function(genotypes,
     # if doing carrying capacity on BREEDERS, not offspring, thin to K here.
     if(!is.null(K_thin_post_surv)){
       if(sum(s) > K_thin_post_surv){
-        s[which(s == 1)][sample(sum(s), K_thin_post_surv, F)] <- 0
+        s[which(s == 1)][sample(sum(s), sum(s) - K_thin_post_surv, F)] <- 0
       }
     }
 
     #what is the pop size after growth?
     out[i,1] <- round(growth.function(sum(s)))
+
 
     #make a new x with the survivors
     genotypes <- genotypes[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
@@ -408,6 +434,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   if(is.null(n)){
     n <- length(phenotypes)
   }
+  out_n <- n
 
   while(n[t] >= 2 & t <= gens){
     ne <- ((2*B)/((2*B) - 1))*n[t] # BL eq 13.
@@ -430,23 +457,29 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
 
     # growth
     nt <- Lt*n[t]
+    out_n <- c(out_n, nt)
     if(nt > K){nt <- K}
+    n <- c(n, nt)
 
     # update
-    n <- c(n, nt)
     mean_phenos <- c(mean_phenos, Egt)
     V_mean_phenos <- c(V_mean_phenos, Vgt)
     lambdas <- c(lambdas, Lt)
     opt_pheno <- c(opt_pheno, k*t)
-    if(t > 1 & lambdas[t] == lambdas[t +1]){
+    if(t > 1 & lambdas[t] == lambdas[t + 1]){
       warning("Population sustainable: k is too small to cause extinction.\n")
       break
     }
     t <- t + 1
   }
 
+<<<<<<< HEAD
   out <- data.frame(t = 1:length(n), n = n, mean_pheno = mean_phenos,
                     V_mean_pheno = V_mean_phenos, lambda = lambdas, opt_pheno = opt_pheno, g_var = g_var_storage)
+=======
+  out <- data.frame(t = 1:length(n), n = out_n, mean_pheno = mean_phenos,
+                    V_mean_pheno = V_mean_phenos, lambda = lambdas, opt_pheno = opt_pheno)
+>>>>>>> 0d126aae50f9b68ee2c36ea6c6d9ba16e7c41a9c
   return(out)
 }
 
@@ -508,12 +541,12 @@ gs_breeders <- function(phenotypes, h, B, K,
     nsurv <- sum(surv)
     if(nsurv > K){surv[sample(which(surv == 1), nsurv - K)] <- 0; nsurv <- K} # if we are above K, kill some more at random.
 
-    n <- c(n, sum(surv))
     opt <- c(opt, t_kt)
     new_mean_phenos <- mean(phenotypes[which(surv == 1)])
     mean_phenos <- c(mean_phenos, new_mean_phenos)
 
     if(sum(surv) < 2){
+      n <- c(n, nsurv)
       Rs <- c(Rs, NA)
       Ss <- c(Ss, NA)
       g_var_storage <- c(g_var_storage, NA)
@@ -538,7 +571,12 @@ gs_breeders <- function(phenotypes, h, B, K,
     else{
       phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, sqrt(p_var))
     }
+<<<<<<< HEAD
     g_var_storage <- c(g_var_storage, g_var)
+=======
+    n <- c(n, length(phenotypes))
+
+>>>>>>> 0d126aae50f9b68ee2c36ea6c6d9ba16e7c41a9c
 
     Rs <- c(Rs, R)
     Ss <- c(Ss, S)

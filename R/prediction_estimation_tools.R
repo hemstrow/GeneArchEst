@@ -23,7 +23,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  burnin = 5000,
                  thin = 100,
                  prediction.model = NULL,
-                 make.ig = TRUE, sub.ig = FALSE, maf.filt = 0.05,
+                 make.ig = TRUE, sub.ig = FALSE, maf.filt = 0, maf.G = 0.05,
                  julia.path = "julia", runID = "r1", qtl_only = FALSE,
                  pass.resid = FALSE, pass.var = FALSE,
                  ntree = 50000,
@@ -32,7 +32,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  standardize = FALSE,
                  center = FALSE,
                  save.meta = TRUE, par = NULL, pi = NULL, pass_G = NULL, phased = F,
-                 verbose = T){
+                 verbose = TRUE){
   #============sanity checks================================
   # check that all of the required arguments are provided for the prediction.model we are running
   if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger", "GMMAT")){
@@ -201,6 +201,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
   x <- x$x
 
+  ind.genos <- smart_transpose_and_unphase(x, phased)
 
   if(prediction.program == "JWAS"){
     odw <- getwd()
@@ -216,7 +217,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     # make an individual genotype file if it isn't already constructed.
     if(make.ig){
       # convert format
-      ind.genos <- convert_2_to_1_column(x)
       ind.genos <- cbind(samp = 1:nrow(ind.genos), ind.genos) # add sample info
       colnames(ind.genos) <- c("samp", paste0("m", 1:(ncol(ind.genos)-1)))
       data.table::fwrite(ind.genos, "ig.txt", sep = " ", col.names = T)
@@ -224,8 +224,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
 
   else if(prediction.program == "BGLR"){
-    # convert
-    ind.genos <- convert_2_to_1_column(x) # rows are individuals, columns are SNPs
     colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
 
@@ -234,7 +232,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
 
   else if(prediction.program == "ranger"){
-    t.x <- convert_2_to_1_column(x) # add sample info
+    t.x <- ind.genos
     colnames(t.x) <- paste0("m", 1:ncol(t.x))
 
     t.eff <- data.frame(phenotype = phenotypes, stringsAsFactors = F)
@@ -243,12 +241,11 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   }
 
   else if(prediction.program == "GMMAT"){
-    ind.genos <- convert_2_to_1_column(x)
     colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
 
     if(is.null(pass_G)){
-      G <- make_G(ind.genos, maf.filt, phased, par)
+      G <- make_G(ind.genos, maf = maf.G, par = par)
     }
     else{
       G <- pass_G
@@ -287,7 +284,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     }
 
     # save the julia script
-    browser()
     writeLines(analysis.jl, "analysis.jl")
     system(julia.call)
 
@@ -417,17 +413,11 @@ pred_gwas_FBM <- function(x = NULL, phenotypes, maf = 0.05, pass_G = NULL, GMMAT
                           phased = F, par = 1, center = T){
   #============transpose==================
   if(!is.null(x)){
-    if(phased == T){
-      xt <- convert_2_to_1_column(x)
-    }
-    else{
-      xt <- bigstatsr::big_transpose(x)
-    }
+    xt <- smart_transpose_and_unphase(x, phased)
   }
-
   #============G prep or import===========
   if(is.null(pass_G)){
-    G <- make_G(xt, maf, phased = F, par)
+    G <- make_G(xt, maf =  maf, par = par)
   }
   else{
     G <- pass_G

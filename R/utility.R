@@ -803,25 +803,17 @@ clean_phenotypes <- function(genotypes, phenos){
 #' Make a G matrix
 #'
 #' Make a G matrix using the Yang et al (2010) method from genotypes.
+#'
+#' @param ind.genos Unphased genotypes, rows are \emph{individuals}.
 #' @export
-make_G <- function(ind.genos, maf = 0.05, phased = F, par = 1){
-  if(phased){
-    ind.genos <- convert_2_to_1_column(ind.genos)
-  }
-
-  if(class(ind.genos) == "FBM"){
-    return(make_yang_G_FBM(ind.genos, maf, par))
-  }
-
-  else{
-    colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
-    rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
-    mig <- min(ind.genos)
-    G <- AGHmatrix::Gmatrix(ind.genos, missingValue = ifelse(mig == 0, NA, mig), method = "Yang", maf = maf)
-    colnames(G) <- rownames(ind.genos)
-    rownames(G) <- rownames(ind.genos)
-    return(G)
-  }
+make_G <- function(ind.genos, maf = 0.05,par = 1){
+  colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
+  rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
+  mig <- min(ind.genos)
+  G <- AGHmatrix::Gmatrix(ind.genos, missingValue = ifelse(mig == 0, NA, mig), method = "Yang", maf = maf)
+  colnames(G) <- rownames(ind.genos)
+  rownames(G) <- rownames(ind.genos)
+  return(G)
 }
 
 
@@ -878,9 +870,21 @@ make_yang_G_FBM <- function(SNPmatrix, maf = 0.05, par = 1){
   return(Gmatrix)
 }
 
+smart_transpose_and_unphase <- function(genotypes, phased){
+  if(phased){
+    return(convert_2_to_1_column(genotypes))
+  }
 
-fetch_phenotypes_ranger <- function(genotypes, model, h, a.var = NULL){
-  tgt <- convert_2_to_1_column(genotypes)
+  if("FBM" %in% class(genotypes)){
+    return(bigstatsr::big_transpose(genotypes))
+  }
+  else{
+    return(t(genotypes))
+  }
+}
+
+fetch_phenotypes_ranger <- function(genotypes, model, h, a.var = NULL, phased = T){
+  tgt <- smart_transpose_and_unphase(genotypes, phased)
   colnames(tgt) <- model$forest$independent.variable.names
   warning("Loci in genotypes assumed to be in same order as provided to random forest model.\n")
   a <- predict(model, data = tgt)$predictions
