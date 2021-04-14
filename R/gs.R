@@ -473,13 +473,8 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
     t <- t + 1
   }
 
-<<<<<<< HEAD
   out <- data.frame(t = 1:length(n), n = n, mean_pheno = mean_phenos,
                     V_mean_pheno = V_mean_phenos, lambda = lambdas, opt_pheno = opt_pheno, g_var = g_var_storage)
-=======
-  out <- data.frame(t = 1:length(n), n = out_n, mean_pheno = mean_phenos,
-                    V_mean_pheno = V_mean_phenos, lambda = lambdas, opt_pheno = opt_pheno)
->>>>>>> 0d126aae50f9b68ee2c36ea6c6d9ba16e7c41a9c
   return(out)
 }
 
@@ -571,12 +566,8 @@ gs_breeders <- function(phenotypes, h, B, K,
     else{
       phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, sqrt(p_var))
     }
-<<<<<<< HEAD
     g_var_storage <- c(g_var_storage, g_var)
-=======
     n <- c(n, length(phenotypes))
-
->>>>>>> 0d126aae50f9b68ee2c36ea6c6d9ba16e7c41a9c
 
     Rs <- c(Rs, R)
     Ss <- c(Ss, S)
