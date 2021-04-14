@@ -114,14 +114,10 @@ gs <- function(genotypes,
     genotypes <- genotypes[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
 
     #=============do random mating, adjust selection, get new phenotype scores, get ready for next gen====
-    y <- rand.mating(x = genotypes, N.next = out[i,1], meta = meta, rec.dist = rec.dist, chr.length, do.sexes)
+    genotypes <- rand.mating(x = genotypes, N.next = out[i,1], meta = meta, rec.dist = rec.dist, chr.length, do.sexes)
     # check that the pop didn't die due to every individual being the same sex (rand.mating returns NULL in this case.)
-    if(is.null(y)){
+    if(is.null(genotypes)){
       break
-    }
-    else{
-      genotypes <- y
-      rm(y)
     }
 
     #get phenotypic/genetic values
@@ -188,7 +184,7 @@ gs <- function(genotypes,
 
   #prepare stuff to return
   out[,"gen"] <- 1:nrow(out)
-  out <- out[-nrow(out),]
+  out <- out[-nrow(out),, drop = F]
 
   if(print.all.freqs){
     a.fqs <- cbind(meta, a.fqs, stringsAsFactors = F)
@@ -361,7 +357,7 @@ optimum_logistic_slide <- function(opt, init_opt, scale, r, ...){
 #' @param K numeric. Carrying capacity. Individuals surviving selection will be randomly culled to this number.
 #' @param omega numeric. Width of the selection function. Smaller numbers equate to stronger selection around the optimum.
 #' @param var.theta numeric. Variance of the stochastic selection optimum.
-#' @param k numeric. Proportion of the initial additive genetiv variance by which the optimum phenotype increases each generation (where mean(opt) = k*t).
+#' @param k numeric. Degree by which the optimum phenotype increases each generation (where mean(opt) = k*t).
 #' @param gens numeric, default Inf. Number of generations to iterate.
 #' @param n numeric, default NULL. Initial population size. If null, equal to the number of provided phenotypes.
 #' @param nloci numeric, default NULL. Number of effective loci. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
@@ -398,7 +394,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   omega <- omega.n
 
   ## standardize k
-  k <- k*g_var
+  k <- k/e_var
 
   # iterate across time to get pop sizes
   t <- 1
@@ -408,6 +404,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   V_mean_phenos <- 0
   lambdas <- NA
   opt_pheno <- 0
+  g_var_storage <- g_var
   if(is.null(n)){
     n <- length(phenotypes)
   }
@@ -419,6 +416,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
     if(!is.null(nloci) & !is.null(alpha) & !is.null(mu)){
       g_var <- (4*nloci*mu*ne*alpha^2)/(1 + ((ne*alpha^2)/Vs)) #  BL eq 14.
     }
+    g_var_storage <- c(g_var_storage, g_var)
 
     #equation 7a
     Vgt <- (((((g_var + Vs)^2)/(ne*(g_var + 2*Vs))) + (g_var*var.theta)/(g_var + 2*Vs)) *
@@ -448,7 +446,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   }
 
   out <- data.frame(t = 1:length(n), n = n, mean_pheno = mean_phenos,
-                    V_mean_pheno = V_mean_phenos, lambda = lambdas, opt_pheno = opt_pheno)
+                    V_mean_pheno = V_mean_phenos, lambda = lambdas, opt_pheno = opt_pheno, g_var = g_var_storage)
   return(out)
 }
 
@@ -469,7 +467,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
 #' @param K numeric. Carrying capacity. Individuals surviving selection will be randomly culled to this number.
 #' @param omega numeric. Width of the selection function. Smaller numbers equate to stronger selection around the optimum.
 #' @param var.theta numeric. Variance of the stochastic selection optimum.
-#' @param k numeric. Proportion of the initial additive genetiv variance by which the optimum phenotype increases each generation (where mean(opt) = k*t).
+#' @param k numeric. Amount by which the optimum phenotype increases each generation (where mean(opt) = k*t).
 #' @param gens numeric, default Inf. Number of generations to iterate.
 #' @param n numeric, default NULL. Initial population size. If null, equal to the number of provided phenotypes.
 #' @param nloci numeric, default NULL. Number of effective loci. If nloci, alpha, and mu are all provided, the stochastic house of cards approximation of genetic variance is used to approximate changes in genetic variance each generation based \emph{only} on changes in effective population size.
@@ -485,9 +483,6 @@ gs_breeders <- function(phenotypes, h, B, K,
   g_var <- h * p_var
   e_var <- p_var - g_var
 
-  ## standardize k
-  k <- k*g_var
-
   # iterate across time to get pop sizes
   t <- 1
   Vs <- (omega^2) + e_var
@@ -498,6 +493,7 @@ gs_breeders <- function(phenotypes, h, B, K,
   Rs <- 0
   Ss <- 0
   opt <- 0
+  g_var_storage <- g_var
   if(is.null(n)){
     n <- length(phenotypes)
   }
@@ -520,6 +516,7 @@ gs_breeders <- function(phenotypes, h, B, K,
     if(sum(surv) < 2){
       Rs <- c(Rs, NA)
       Ss <- c(Ss, NA)
+      g_var_storage <- c(g_var_storage, NA)
       break
     }
 
@@ -541,6 +538,7 @@ gs_breeders <- function(phenotypes, h, B, K,
     else{
       phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, sqrt(p_var))
     }
+    g_var_storage <- c(g_var_storage, g_var)
 
     Rs <- c(Rs, R)
     Ss <- c(Ss, S)
@@ -548,7 +546,7 @@ gs_breeders <- function(phenotypes, h, B, K,
   }
 
   out <- data.frame(t = 1:length(n), n = n, mean_pheno = mean_phenos, opt_pheno = opt,
-                    response_to_selection = Rs, selection_differential = Ss)
+                    response_to_selection = Rs, selection_differential = Ss, g_var = g_var_storage)
   return(out)
 }
 
@@ -565,7 +563,6 @@ gs_outliers <- function(genotypes, pvals, scores, gens,
   maf_func <- function(alleles){
     rowSums(alleles)/(2*ncol(alleles))
   }
-
 
   #===============initialize=============
   # find outliers and grab the genotypes

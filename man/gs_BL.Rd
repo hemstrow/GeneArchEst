@@ -32,7 +32,7 @@ gs_BL(
 
 \item{var.theta}{numeric. Variance of the stochastic selection optimum.}
 
-\item{k}{numeric. Proportion of the initial additive genetiv variance by which the optimum phenotype increases each generation (where mean(opt) = k*t).}
+\item{k}{numeric. Degree by which the optimum phenotype increases each generation (where mean(opt) = k*t).}
 
 \item{gens}{numeric, default Inf. Number of generations to iterate.}
 

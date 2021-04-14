@@ -14,7 +14,8 @@ ABC_on_hyperparameters(
   h_dist = function(x) rep(0.5, x),
   center = T,
   par = F,
-  phased = F
+  phased = F,
+  save_effects = F
 )
 }
 \arguments{

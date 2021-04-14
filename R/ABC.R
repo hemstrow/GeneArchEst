@@ -33,7 +33,6 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                    h_dist = function(x) rep(.5, x),
                                    center = T,
                                    par = F, phased = F, save_effects = F){
-  browser()
 
   #============ABC_scheme function for one rep=============
   scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center, phased = F){
@@ -190,6 +189,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
 #' @param res data.frame, the results of an ABC run, must include a "dist" column.
 #' @param num_accepted numeric, either the proportion of runs to accept or the number of runs to accept.
 #' @param parameters character, the parameter names for which to draw values.
+#'
+#' @export
 gen_parms <- function(x, res, num_accepted, parameters, grid = 2000, dist.var = "ks"){
   if(length(parameters) != 2){
     stop("Only two parameters accepted at the moment.\n")

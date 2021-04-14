@@ -617,7 +617,7 @@ make_vcf <- function(x, meta, missing_genotypes = -9){
   # for now, 0s will be A, 1s will be T, -1s will be .
   # for now, going to do this via conversion to 0 1 2, then converting. In the future will have a skip for phased data.
 
-  vcf <- data.table::data.table(CHROM = as.numeric(as.factor(meta[,1])),
+  vcf <- data.table::data.table(CHROM = as.numeric(factor(meta[,1], levels = unique(meta[,1]))),
                                 POS = meta[,2],
                                 ID = paste0("snp", 1:nrow(meta)),
                                 REF = "A",
