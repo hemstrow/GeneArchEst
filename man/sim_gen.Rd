@@ -21,7 +21,7 @@ sim_gen(
   peak_delta = 0.5,
   peak_pcut = 5e-04,
   window_sigma = 50,
-  phased = F,
+  phased = FALSE,
   maf = 0.05,
   pass_windows = NULL,
   pass_G = NULL,
@@ -29,7 +29,7 @@ sim_gen(
   reg_res = NULL,
   find_similar_effects = F,
   real_effects = NULL,
-  save_effects = F
+  save_effects = FALSE
 )
 }
 \arguments{

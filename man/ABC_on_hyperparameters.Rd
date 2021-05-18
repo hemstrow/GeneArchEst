@@ -12,10 +12,10 @@ ABC_on_hyperparameters(
   parameter_distributions = list(pi = function(x) rbeta(x, 25, 1), d.f = function(x)
     runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3) * 100),
   h_dist = function(x) rep(0.5, x),
-  center = T,
-  par = F,
-  phased = F,
-  save_effects = F
+  center = TRUE,
+  par = FALSE,
+  phased = FALSE,
+  save_effects = FALSE
 )
 }
 \arguments{

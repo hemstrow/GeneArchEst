@@ -98,7 +98,7 @@ rflat_fixed <- function(n, sites, scale){
 #'
 #' Produce reasonable linear transformations for any provided parameters from a
 #' bank of tested transformation functions. If no tested transforms exist, returns
-#' the \code{\link{identity} function.
+#' the \code{\link{identity}} function.
 #'
 #' @param parameters character, default c("pi", "scale"). Parameters for which to fetch reasonable transformation functions.
 #'

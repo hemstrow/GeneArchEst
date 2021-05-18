@@ -17,14 +17,14 @@ calc_distribution_stats(
   burnin = NULL,
   thin = NULL,
   chain_length = NULL,
-  maf = 0,
-  phased = F,
+  maf = 0.05,
+  phased = FALSE,
   pass_windows = F,
   pass_G = NULL,
   GMMAT_infile = NULL,
-  find_similar_effects = F,
+  find_similar_effects = FALSE,
   real_effects = NULL,
-  save_effects = F
+  save_effects = FALSE
 )
 }
 \arguments{

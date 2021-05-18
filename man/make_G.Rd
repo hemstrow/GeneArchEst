@@ -4,7 +4,10 @@
 \alias{make_G}
 \title{Make a G matrix}
 \usage{
-make_G(ind.genos, maf = 0.05, phased = F, par = 1)
+make_G(ind.genos, maf = 0.05, par = 1)
+}
+\arguments{
+\item{ind.genos}{Unphased genotypes, rows are \emph{individuals}.}
 }
 \description{
 Make a G matrix using the Yang et al (2010) method from genotypes.

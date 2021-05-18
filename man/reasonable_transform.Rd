@@ -13,7 +13,9 @@ reasonable_transform(parameters = c("pi", "scale"))
 A nested, named list containing forward and back transforms for the named parameters.
 }
 \description{
-
+Produce reasonable linear transformations for any provided parameters from a
+bank of tested transformation functions. If no tested transforms exist, returns
+the \code{\link{identity}} function.
 }
 \examples{
 # for pi

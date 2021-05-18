@@ -390,6 +390,7 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
 }
 
 #converts 2 column to 1 column genotypes and transposes
+#' @export
 convert_2_to_1_column <- function(x){
   if("FBM" %in% class(x)){
     x1 <- bigstatsr::FBM(nrow(x), ncol(x)/2, init =
