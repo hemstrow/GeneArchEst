@@ -15,7 +15,8 @@ Depends:
     data.table,
     doParallel,
     foreach,
-    GenKern
+    GenKern,
+    R (>= 2.10)
 biocViews:
 Imports:
     AGHmatrix,
