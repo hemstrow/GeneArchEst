@@ -8,11 +8,14 @@
 \alias{rzero_inflated_normal_fixed}
 \alias{rflat}
 \alias{rflat_fixed}
+\alias{rbayesA}
 \title{Effect size distributions.}
 \usage{
 rbayesB(n, pi, d.f, scale)
 
 rbayesB_fixed(n, sites, d.f, scale)
+
+rbayesA(n, d.f, scale)
 
 rzero_inflated_normal(n, pi, sd, scale)
 
@@ -27,14 +30,13 @@ rflat_fixed(n, sites, scale)
 
 \item{pi}{numeric. Probability that any one site has zero effect}
 
-\item{d.f}{numeric. Degrees of freedom for the effect size distribution.}
+\item{d.f}{numeric. Degrees of freedom for the effect size t distribution.}
 
-\item{scale}{numeric. Scale/shape parameter for the scaled-inverse
-chi-squared distribution.}
+\item{scale}{numeric. Scale/shape parameter for the scaled t distribution.}
 
 \item{sites}{numeric. Number of sites that have an effect.}
 
-\item{sd}{numeric. Standard deviation for the effect size distribution.}
+\item{sd}{numeric. Standard deviation for the effect size t distribution.}
 }
 \description{
 Generate any number of random values drawn from the locus effect size
@@ -44,7 +46,9 @@ distributions.
 \itemize{
 \item \code{rbayesB}: assign some loci an effect from a scaled t distribution given a probablity of non-zero effects
 
-\item \code{rbayesB_fixed}: assign a fixed number of loci effects from a scaled t distribution given
+\item \code{rbayesB_fixed}: assign a fixed number of loci effects from a scaled t distribution
+
+\item \code{rbayesA}: assign all loci effects from a scaled t distribution
 
 \item \code{rzero_inflated_normal}: assign some loci an effect from a scaled normal distribution given a probability of non-zero effects
 
@@ -57,12 +61,18 @@ distributions.
 
 \section{BayesB}{
 
-Under a bayesB model, the effect of each site is drawn from a distribution
-where var(g) == 0. Each locus has probability \emph{pi} of having no effect. Effects are otherwise drawn from a scaled t
+Under a bayesB model, each locus has probability \emph{pi} of having no effect. Effects are otherwise drawn from a scaled t
 distribution with degrees of freedom \emph{d.f} and scale \emph{scale}.
 Alternatively, a fixed number of sites (\emph{sites}) can be given an effect from the same
 distribution. This is equivalent to the expected number of sites when \emph{pi} = 1
 - (\emph{sites}/\emph{n}), where \emph{n} is the number of loci.
+}
+
+\section{BayesA}{
+
+Under a bayesA model, all loci have effects drawn from a scaled t distribution
+with degrees of freedom \emph{d.f} and scale \emph{scale}. This is equivalent
+to a bayesB model where \emph{pi} is equal to 0.
 }
 
 \section{scaled normal}{

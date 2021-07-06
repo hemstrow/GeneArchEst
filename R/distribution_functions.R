@@ -5,12 +5,16 @@
 #' distributions.
 #'
 #' @section BayesB:
-#' Under a bayesB model, the effect of each site is drawn from a distribution
-#' where var(g) == 0. Each locus has probability \emph{pi} of having no effect. Effects are otherwise drawn from a scaled t
+#' Under a bayesB model, each locus has probability \emph{pi} of having no effect. Effects are otherwise drawn from a scaled t
 #' distribution with degrees of freedom \emph{d.f} and scale \emph{scale}.
 #' Alternatively, a fixed number of sites (\emph{sites}) can be given an effect from the same
 #' distribution. This is equivalent to the expected number of sites when \emph{pi} = 1
 #' - (\emph{sites}/\emph{n}), where \emph{n} is the number of loci.
+#'
+#' @section BayesA:
+#' Under a bayesA model, all loci have effects drawn from a scaled t distribution
+#' with degrees of freedom \emph{d.f} and scale \emph{scale}. This is equivalent
+#' to a bayesB model where \emph{pi} is equal to 0.
 #'
 #' @section scaled normal:
 #' Effects are drawn from a normal distribution where var(g) == 0.
@@ -30,10 +34,9 @@
 #' @param n numeric. Number of draws to make from the distribution
 #' @param pi numeric. Probability that any one site has zero effect
 #' @param sites numeric. Number of sites that have an effect.
-#' @param d.f numeric. Degrees of freedom for the effect size distribution.
-#' @param sd numeric. Standard deviation for the effect size distribution.
-#' @param scale numeric. Scale/shape parameter for the scaled-inverse
-#'   chi-squared distribution.
+#' @param d.f numeric. Degrees of freedom for the effect size t distribution.
+#' @param sd numeric. Standard deviation for the effect size t distribution.
+#' @param scale numeric. Scale/shape parameter for the scaled t distribution.
 #' @name effect_size_distributions
 #'
 #' @aliases rbayesB rbayesB_fixed rzero_inflated_normal rzero_inflated_normal_fixed rflat rflat_fixed
@@ -50,13 +53,19 @@ rbayesB <- function(n, pi, d.f, scale){
   return(eff)
 }
 
-#' @describeIn effect_size_distributions assign a fixed number of loci effects from a scaled t distribution given
+#' @describeIn effect_size_distributions assign a fixed number of loci effects from a scaled t distribution
 #' @export
 rbayesB_fixed <- function(n, sites, d.f, scale){
   sites <- floor(sites)
   eff <- numeric(n)
   eff[sample(n, sites, replace = F)] <- scale * rt(sites, d.f)
   return(eff)
+}
+
+#' @describeIn  effect_size_distributions assign all loci effects from a scaled t distribution
+#' @export
+rbayesA <- function(n, d.f, scale){
+  eff <- scale*rt(n, d.f)
 }
 
 #' @describeIn effect_size_distributions assign some loci an effect from a scaled normal distribution given a probability of non-zero effects
