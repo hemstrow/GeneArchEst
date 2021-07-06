@@ -650,6 +650,7 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
   #===============construct call==========
   old.scipen <- getOption("scipen")
   options(scipen = 999)
+  browser()
   call <- paste0("java -jar ", beagle_path, " gt=data.vcf out=data.gt nthreads=",
                  num_threads, " ne=", ne)
   if(!is.null(additional_args)){
@@ -663,9 +664,10 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
 
   #==============parse results===========
   # read in vcf and convert back to input format
-  res <- process_vcf("data.gt.vcf.gz", filter_non_poly = F)
+  #res <- process_vcf("data.gt.vcf.gz", filter_non_poly = F)
 
-  return(res$genotypes)
+  #return(res$genotypes)
+  return(TRUE)
 }
 
 #' @export
