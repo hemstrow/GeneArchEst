@@ -650,7 +650,6 @@ impute_and_phase_beagle <- function(x = NULL, meta = NULL,
   #===============construct call==========
   old.scipen <- getOption("scipen")
   options(scipen = 999)
-  browser()
   call <- paste0("java -jar ", beagle_path, " gt=data.vcf out=data.gt nthreads=",
                  num_threads, " ne=", ne)
   if(!is.null(additional_args)){
