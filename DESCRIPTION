@@ -34,7 +34,7 @@ Imports:
     matrixStats,
     mgcv,
     nonpar,
+    purrr,
     ranger,
     reshape2,
-    rvest,
     snow
