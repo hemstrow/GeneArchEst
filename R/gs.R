@@ -25,10 +25,12 @@ gs <- function(genotypes,
                plot_during_progress = FALSE,
                facet = "group",
                do.sexes = TRUE,
-               init = F,
-               verbose = T,
+               init = FALSE,
+               verbose = FALSE,
                print.all.freqs = F,
                model = NULL, K_thin_post_surv = NULL){
+
+  #========================prep===========================
   if(verbose){cat("Initializing...\n")}
   genotypes <- data.table::as.data.table(genotypes)
 
@@ -81,7 +83,7 @@ gs <- function(genotypes,
   h.av <- var(BVs) #get the historic addative genetic variance.
   h.pv <- var(phenotypes) #historic phenotypic variance.
 
-  out[1,] <- c(N, mean(phenotypes), mean(BVs), opt, 0, h.av, opt, 1) #add this and the mean initial additive genetic variance
+  out[1,] <- c(NA, mean(phenotypes), mean(BVs), opt, 0, h.av, opt, 1) #add this and the mean initial additive genetic variance
   if(plot_during_progress){
     library(ggplot2)
     pdat <- reshape2::melt(out)
@@ -111,13 +113,14 @@ gs <- function(genotypes,
     cat("\nBeginning run...\n\n================================\n\n")
   }
 
+  offn <- N
   for(i in 2:(gens+1)){
     #=========survival====
     # get the optimum phenotype this gen
     t.opt <- rnorm(1, opt, var.theta)
 
     #survival:
-    s <- rbinom(out[(i-1),1], 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
+    s <- rbinom(offn, 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
                 survival.function(phenotypes, t.opt))
 
     #if the population has died out, stop.
@@ -132,15 +135,60 @@ gs <- function(genotypes,
       }
     }
 
+    #===============save output============
+
+    # update output and report
+    out[i,1] <- sum(s)
+    out[i,2] <- mean(phenotypes)
+    out[i,3] <- mean(BVs)
+    out[i,4] <- opt
+    out[i,5] <- opt - mean(BVs)
+    out[i,6] <- var(BVs)
+    out[i,7] <- t.opt
+    if(verbose){
+      cat("gen:", i,
+          "\tf_opt:", round(out[i,4],3),
+          "\ts_opt", round(out[i,7],3),
+          "\tmean(BVs):", round(out[i,3],3),
+          "\tvar(BVs):", round(out[i,6],3),
+          "\tlag:", round(out[i,4],3) - round(out[i,3],3),
+          "\tN:", out[i,1],"\n")
+    }
+
+    # plot
+    if(plot_during_progress){
+      pdat <- reshape2::melt(out)
+      colnames(pdat) <- c("Generation", "var", "val")
+      ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
+                           ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
+                           ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
+      pdat <- merge(pdat, ranges, by = "var")
+      print(ggplot(pdat, aes(Generation, val)) + geom_line(na.rm = T) + geom_point(na.rm = T) +
+              facet_wrap(~var, ncol = 1, scales = "free_y", strip.position = "left") +
+              geom_blank(aes(y = ymin)) +
+              geom_blank(aes(y = ymax)) +
+              theme_bw() + xlim(c(0, max(pdat$Generation))) +
+              theme(strip.placement = "outside", axis.title.y = element_blank(), strip.background = element_blank(),
+                    strip.text = element_text(size = 11)))
+    }
+
+
+    #add allele frequencies if requested
+    if(print.all.freqs){
+      a.fqs[,i] <- rowSums(genotypes)/ncol(genotypes)
+    }
+
+
+    #===============figure out next generation===============
     #what is the pop size after growth?
-    out[i,1] <- round(growth.function(sum(s)))
+    offn <- round(growth.function(out[i,1]))
 
 
     #make a new x with the survivors
     genotypes <- genotypes[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
 
     #=============do random mating, adjust selection, get new phenotype scores, get ready for next gen====
-    genotypes <- rand.mating(x = genotypes, N.next = out[i,1], meta = meta, rec.dist = rec.dist, chr.length, do.sexes)
+    genotypes <- rand.mating(x = genotypes, N.next = offn, meta = meta, rec.dist = rec.dist, chr.length, do.sexes)
     # check that the pop didn't die due to every individual being the same sex (rand.mating returns NULL in this case.)
     if(is.null(genotypes)){
       break
@@ -165,45 +213,6 @@ gs <- function(genotypes,
 
     #adjust selection optima
     opt <- selection.shift.function(opt, iv = sqrt(h.av))
-
-    #save
-    out[i,2] <- mean(phenotypes)
-    out[i,3] <- mean(BVs)
-    out[i,4] <- opt
-    out[i,5] <- opt - mean(BVs)
-    out[i,6] <- var(BVs)
-    out[i,7] <- t.opt
-    if(verbose){
-      cat("gen:", i-1,
-          "\tf_opt:", round(out[i-1,4],3),
-          "\ts_opt", round(out[i-1,7],3),
-          "\tmean(phenotypes):", round(out[i,2],3),
-          "\tmean(BVs):", round(out[i,3],3),
-          "\tvar(BVs):", round(var(BVs),3),
-          "\tNs:", sum(s),
-          "\tN(t+1):", out[i,1],"\n")
-    }
-    if(plot_during_progress){
-      pdat <- reshape2::melt(out)
-      colnames(pdat) <- c("Generation", "var", "val")
-      ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
-                           ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
-                           ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
-      pdat <- merge(pdat, ranges, by = "var")
-      print(ggplot(pdat, aes(Generation, val)) + geom_line(na.rm = T) + geom_point(na.rm = T) +
-              facet_wrap(~var, ncol = 1, scales = "free_y", strip.position = "left") +
-              geom_blank(aes(y = ymin)) +
-              geom_blank(aes(y = ymax)) +
-              theme_bw() + xlim(c(0, max(pdat$Generation))) +
-              theme(strip.placement = "outside", axis.title.y = element_blank(), strip.background = element_blank(),
-                    strip.text = element_text(size = 11)))
-    }
-
-
-    #add allele frequencies if requested
-    if(print.all.freqs){
-      a.fqs[,i] <- rowSums(genotypes)/ncol(genotypes)
-    }
 
     gc()
   }
@@ -434,6 +443,8 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   if(is.null(n)){
     n <- length(phenotypes)
   }
+
+  n <- min(n, k_thin)
   out_n <- n
 
   while(n[t] >= 2 & t <= gens){
@@ -526,9 +537,12 @@ gs_breeders <- function(phenotypes, h, B, K,
     n <- length(phenotypes)
   }
 
+  n <- min(n, k_thin)
+
 
 
   while(n[t] >= 2 & t <= gens){
+
     # stochastic survival
     t_kt <- sum(k*t + rnorm(1, 0, sqrt(var.theta)))
     surv <- rbinom(length(phenotypes), 1, BL_survival(phenotypes, t_kt, omega))
@@ -539,9 +553,10 @@ gs_breeders <- function(phenotypes, h, B, K,
     opt <- c(opt, t_kt)
     new_mean_phenos <- mean(phenotypes[which(surv == 1)])
     mean_phenos <- c(mean_phenos, new_mean_phenos)
+    n <- c(n, nsurv)
+
 
     if(sum(surv) < 2){
-      n <- c(n, nsurv)
       Rs <- c(Rs, NA)
       Ss <- c(Ss, NA)
       g_var_storage <- c(g_var_storage, NA)
@@ -567,7 +582,6 @@ gs_breeders <- function(phenotypes, h, B, K,
       phenotypes <- rnorm(nsurv*B, mean(phenotypes) + R, sqrt(p_var))
     }
     g_var_storage <- c(g_var_storage, g_var)
-    n <- c(n, length(phenotypes))
 
     Rs <- c(Rs, R)
     Ss <- c(Ss, S)
