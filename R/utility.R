@@ -903,3 +903,14 @@ fetch_phenotypes_ranger <- function(genotypes, model, h, a.var = NULL, phased = 
   p <- list(a = a, p = p)
   return(p)
 }
+
+
+#' Names of the statistics calculated during distribution comparisons
+#'
+#' @format A character vector of length 32.
+"names_diff_stats"
+
+#' Names of the descriptive statistics calculated from GWAS results.
+#'
+#' @format A character vector of length 729.
+"names_descriptive_stats"
