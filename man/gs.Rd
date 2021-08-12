@@ -21,8 +21,8 @@ gs(
   plot_during_progress = FALSE,
   facet = "group",
   do.sexes = TRUE,
-  init = F,
-  verbose = T,
+  init = FALSE,
+  verbose = FALSE,
   print.all.freqs = F,
   model = NULL,
   K_thin_post_surv = NULL

@@ -102,6 +102,9 @@ init_pop <- function(x,
 #=======function to do a single generation of random mating===========
 #' @export
 rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE){
+
+  #-=========prep========
+
   if(length(unique(meta[,1])) != length(chr.length)){
     stop("The number of unique chromosomes is not equal to the number of chromsome lengths provided.\n")
   }
@@ -132,7 +135,7 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE){
 
   # table with the showing the distribution of the number of offspring for each adult:
   # table(c(table(mates), rep(0, (ncol(x)/2) - length(table(mates)))))
-  x.next <- data.table::as.data.table(matrix(0, nrow(x), nrow(mates)*2)) #initialize x matrix for next gen
+  x.next <- data.table::as.data.table(matrix(0, 1, nrow(mates)*2))[rep(1, nrow(x))] #initialize x matrix for next gen
 
   #=========figure out which copy from each parent goes to offspring=====
   #randomly choose gene copies to push to individuals in the next gen.
@@ -249,7 +252,7 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE){
 
       }
 
-      #================assign chromosomes to x.next.
+      #================assign chromosomes to x.next.==========
       if(k == 1){
         data.table::set(x.next, which(meta[,facet] == uf[j]), as.integer(seq(1, ncol(x.next), by = 2)), c1.mat)
       }
