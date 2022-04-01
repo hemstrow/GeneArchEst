@@ -425,6 +425,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   ## update
   p_var <- p_var.n
   g_var <- g_var.n
+  e_var_original <- e_var
   e_var <- e_var.n
   omega <- omega.n
 
@@ -439,7 +440,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
   V_mean_phenos <- 0
   lambdas <- NA
   opt_pheno <- 0
-  g_var_storage <- g_var
+  g_var_storage <- g_var*e_var_original
   if(is.null(n)){
     n <- length(phenotypes)
   }
@@ -454,7 +455,7 @@ gs_BL <- function(phenotypes, h, K, omega, B, var.theta, k, gens = Inf, n = NULL
     if(!is.null(nloci) & !is.null(alpha) & !is.null(mu)){
       g_var <- (4*nloci*mu*ne*alpha^2)/(1 + ((ne*alpha^2)/Vs)) #  BL eq 14.
     }
-    g_var_storage <- c(g_var_storage, g_var)
+    g_var_storage <- c(g_var_storage, g_var*e_var_original)
 
     #equation 7a
     Vgt <- (((((g_var + Vs)^2)/(ne*(g_var + 2*Vs))) + (g_var*var.theta)/(g_var + 2*Vs)) *
