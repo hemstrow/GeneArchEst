@@ -42,8 +42,11 @@
 #'   list(pi = function(x) rbeta(x, 25, 1), d.f = function(x) runif(x, 1, 100), scale = function(x) rbeta(x, 1, 3)*100).
 #'   Named functions giving the distributions from which to draw effect_size distribution hyperparameters.
 #' @param save_effects character or FALSE, default FALSE. If true, simulated effects will be saved to filepath provided here.
+#' @param provided_effects data.frame or NULL. If provided, a data.frame containing the effects to use for each iteration instead of
+#'   sampling from a distribution. Useful if data is pre-drawn from a distribution and screened for phenotypic match (via, for example, \code{\link{ABC_on_hyperparameters}}).
+#' @param provided_effect_hyperparameters data.frame or NULL. If provided_effects are given, a data frame of the hyperparamters used to generate
+#'   those effects. Needed to generate consistent reporting of results.
 #'
-#' Uses the provided
 #' @export
 sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                     effect_distribution = rbayesB,
@@ -55,7 +58,8 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                     par = 1, joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks",
                     peak_delta = .5, peak_pcut = 0.0005, window_sigma = 50, phased = FALSE, maf = 0.05,
                     pass_windows = NULL, pass_G = NULL, GMMAT_infile = NULL, reg_res = NULL,
-                    find_similar_effects = F, real_effects = NULL, save_effects = FALSE){
+                    find_similar_effects = F, real_effects = NULL,
+                    provided_effects = NULL, provided_effect_hyperparameters = NULL){
 
   #============schem functions for one simulation=============
   # gp <- function(x, pi, df, scale, method, t_iter, h, windows, center = center){
@@ -71,10 +75,22 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
   #
   #   return(list(stats = stats, e = pseudo$e))
   # }
-  gwas <- function(x, effect_distribution, parameters, h, center = center,
-                   t_iter, G, windows, phased = FALSE, GMMAT_infile = NULL){
+  gwas <- function(x, effect_distribution, parameters = NULL, h, center = center,
+                   t_iter, G, windows, phased = FALSE, GMMAT_infile = NULL, effects = NULL){
+    if(is.null(effects)){
+      pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center, phased = phased)
+    }
+    else{
+      pseudo <- vector("list", 2)
+      names(pseudo) <- c("e", "p")
+      pseudo$p <- get.pheno.vals(x = x, effect.sizes = effects, h = h, phased = phased)$p
+      pseudo$e <- effects
+      if(center){
+        pseudo$p <- pseudo$p - mean(pseudo$p)
+      }
+    }
 
-    pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center, phased = phased)
+
 
     stats <- calc_distribution_stats(x = x, meta = meta, phenos = pseudo$p, center = center,
                                          scheme = "gwas", chr = colnames(meta)[1],
@@ -82,46 +98,62 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                                          burnin = NULL, thin = NULL, chain_length = NULL, maf = maf, phased = phased,
                                          pass_windows = windows, pass_G = G, GMMAT_infile = GMMAT_infile, find_similar_effects = find_similar_effects, real_effects = real_effects)
 
-    if(save_effects){
-      write.table(pseudo)
-    }
     return(stats)
   }
 
   loop_func <- function(x, effect_distribution, parameters, scheme,
-                        t_iter, G = NULL, h, windows, center = center, phased = FALSE){
+                        t_iter, G = NULL, h, windows, center = center, phased = FALSE, effects = NULL){
     # if(scheme == "gp"){
     #   dist <- gp(x, pi, df, scale, method, t_iter, h, windows, center = center)
     # }
     if(scheme == "gwas"){
       dist <- gwas(x, effect_distribution, parameters = parameters, h = h, center = center,
-                   t_iter = t_iter, windows = windows, G = G, phased = phased, GMMAT_infile = GMMAT_infile)
+                   t_iter = t_iter, windows = windows, G = G, phased = phased, GMMAT_infile = GMMAT_infile, effects = effects)
     }
     return(dist)
   }
 
   #============prep for simulations======================================
   # if any joint parameter priors, calculate and disambiguate
-  joint_parms <- names(parameter_distributions)[which(parameter_distributions == "joint")]
-  parms <- as.data.frame(matrix(NA, iters, 0))
-  if(length(joint_parms) > 0){
-    parms <- cbind(parms, gen_parms(iters, joint_res, joint_acceptance, joint_parms, dist.var = joint_res_dist))
+  # joint_parms <- names(parameter_distributions)[which(parameter_distributions == "joint")]
+  # parms <- as.data.frame(matrix(NA, iters, 0))
+  # if(length(joint_parms) > 0){
+  #   parms <- cbind(parms, gen_parms(iters, joint_res, joint_acceptance, joint_parms, dist.var = joint_res_dist))
+  # }
+  # if(!is.null(reg_res)){
+  #   parms <- cbind(parms, sample_joint_quantile(iters, reg_res))
+  # }
+  # if(ncol(parms) < length(parameter_distributions)){
+  #   other_parms <- names(parameter_distributions)[which(!names(parameter_distributions) %in% colnames(parms))]
+  #   run_parameters <- vector("list", length = length(other_parms))
+  #   names(run_parameters) <- other_parms
+  #   for(i in 1:length(run_parameters)){
+  #     run_parameters[[i]] <- parameter_distributions[[other_parms[i]]](iters)
+  #   }
+  #   parms <- cbind(parms, as.data.frame(run_parameters))
+  # }
+  # run_parameters <- parms
+  # rm(parms)
+
+  if(is.null(provided_effects)){
+    run_parameters <- sample_parameters_from_distributions(parameter_distributions = parameter_distributions,
+                                                           iters = iters,
+                                                           joint_res = joint_res,
+                                                           joint_acceptance = joint_acceptance,
+                                                           joint_res_dist = joint_res_dist,
+                                                           reg_res = reg_res)
+    h <- h_dist(iters)
   }
-  if(!is.null(reg_res)){
-    parms <- cbind(parms, sample_joint_quantile(iters, reg_res))
-  }
-  if(ncol(parms) < length(parameter_distributions)){
-    other_parms <- names(parameter_distributions)[which(!names(parameter_distributions) %in% colnames(parms))]
-    run_parameters <- vector("list", length = length(other_parms))
-    names(run_parameters) <- other_parms
-    for(i in 1:length(run_parameters)){
-      run_parameters[[i]] <- parameter_distributions[[other_parms[i]]](iters)
+  else{
+    run_parameters <- NULL
+    if(is.function(h_dist)){
+      h <- h_dist(iters)
     }
-    parms <- cbind(parms, as.data.frame(run_parameters))
+    else{
+      h <- h_dist
+    }
   }
-  run_parameters <- parms
-  rm(parms)
-  h <- h_dist(iters)
+
 
   # can pass a g matrix forward once if doing gwas
   if(scheme == "gwas" & is.null(pass_G)){
@@ -153,15 +185,22 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
 
   # run the simulations
   ## serial
-  if(par == F | par == 1){
+  browser()
+  if(isFALSE(par) | par == 1){
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
       dist_output[i,] <- loop_func(x, effect_distribution,
                                    parameters = as.list(run_parameters[i,,drop = F]),
                                    scheme = scheme,
-                                   t_iter = i, G = G, h = h[i], windows = windows, center = center, phased = phased)
+                                   t_iter = i, G = G, h = h[i], windows = windows, center = center, phased = phased,
+                                   effects = unlist(provided_effects[i,]))
     }
-    ret <- cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output))
+    if(is.null(run_parameters)){
+      ret <- cbind(provided_effect_hyperparameters, h = h, as.data.table(dist_output))
+    }
+    else{
+      ret <- cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output))
+    }
     if(!is.list(ret)){
       ret <- as.data.frame(t(ret))
     }
@@ -171,18 +210,23 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
 
   # parallel
   else{
+    stop("Parallel is not currently working. Problem is likely due to how files are saved during GMMAT in parallel. Fix with pre-generated temp file names?")
     cl <- snow::makeSOCKcluster(par)
     doSNOW::registerDoSNOW(cl)
 
     # divide up into ncore chunks
-    chunks <- list(parms = split(run_parameters, (1:iters)%%par),
-                   dist_output = split(as.data.frame(dist_output), (1:iters)%%par),
-                   h = split(as.data.frame(h), (1:iters)%%par))
+    it_set <- (1:iters)%%par
+    chunks <- list(parms = .smart_split(run_parameters, it_set),
+                   dist_output = .smart_split(as.data.frame(dist_output), it_set),
+                   h = .smart_split(as.data.frame(h), it_set),
+                   effects = .smart_split(as.data.frame(provided_effects), it_set),
+                   effect_hyper = .smart_split(as.data.frame(provided_effect_hyperparameters), it_set))
 
 
     # prepare reporting function
     progress <- function(n) cat(sprintf("Chunk %d out of", n), par, "is complete.\n")
     opts <- list(progress=progress)
+
 
     output <- foreach::foreach(q = 1:par, .inorder = FALSE,
                                .options.snow = opts, .packages = c("data.table", "GeneArchEst")
@@ -191,16 +235,18 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                                  parm_chunk <- chunks$parm[[q]]
                                  h_chunk <- unlist(chunks$h[[q]])
                                  dist_chunk <- chunks$dist_output[[q]]
+                                 effect_chunk <- chunks$effects[[q]]
                                  is.err <- numeric(0)
                                  errs <- character(0)
 
 
                                  # run once per iter in this chunk
-                                 for(i in 1:nrow(parm_chunk)){
+                                 for(i in 1:nrow(dist_chunk)){
                                    b <- try(loop_func(x, effect_distribution,
                                                       parameters = as.list(parm_chunk[i,,drop = F]),
                                                       scheme = scheme,
                                                       t_iter = paste0(q, "_", i), G = G, h = h_chunk[i],
+                                                      effects = unlist(effect_chunk[i,]),
                                                       windows = windows, center = center, phased = phased), silent = T)
                                    if(class(b) == "try-error"){
                                      is.err <- c(is.err, i)
@@ -210,6 +256,12 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
                                      dist_chunk[i,] <- b
                                    }
                                  }
+
+                                 if(is.null(run_parameters)){
+                                   parm_chunk <- chunks$effect_hyper[[q]]
+                                 }
+
+
                                  out <- vector("list", 2)
                                  names(out) <- c("successes", "fails")
                                  if(length(is.err) > 0){

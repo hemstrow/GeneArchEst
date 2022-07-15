@@ -167,8 +167,8 @@ compare_distributions <- function(o, p){
 
 
   # comparative
-  capture.output(invisible((lepage <- nonpar::lepage.test(p, o))))
-  capture.output(invisible(cucconi <- nonpar::cucconi.test(p, o, "permutation")))
+  capture.output(invisible((lepage <- lepage.test(p, o))))
+  capture.output(invisible(cucconi <- cucconi.test(p, o, "permutation")))
   suppressMessages(out_dist <- c(ks = unlist(ks.test(p, o)$statistic),
                                  norm.ks = tryCatch(ks.test(p/sum(p), o/sum(o))$statistic, error=function(err) NA),
                                  lepage.p = lepage$p.value, lepage.s = lepage$obs.stat,

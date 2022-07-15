@@ -20,7 +20,7 @@ calc_distribution_stats <- function(x = NULL, meta, phenos, center = T, scheme =
                                     find_similar_effects = FALSE, real_effects = NULL, save_effects = FALSE){
   #===========functions to run gwas or gp=============
   gwas <- function(x, phenos, meta, windows, peak_delta, peak_pcut, chr, GMMAT_infile = NULL, pass_G = NULL){
-    if(class(x) == "FBM"){
+    if("FBM" %in% class(x)){
       if(!is.null(GMMAT_infile) & !is.null(pass_G)){
         x_pi <- pred_gwas_FBM(x = NULL, maf = maf,
                               GMMAT_infile = GMMAT_infile, pass_G = pass_G,

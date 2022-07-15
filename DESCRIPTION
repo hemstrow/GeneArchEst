@@ -33,7 +33,6 @@ Imports:
     inline,
     matrixStats,
     mgcv,
-    nonpar,
     purrr,
     ranger,
     reshape2,

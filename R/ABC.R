@@ -32,7 +32,10 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                                                   scale = function(x) rbeta(x, 1, 3)*100),
                                    h_dist = function(x) rep(.5, x),
                                    center = TRUE,
-                                   par = FALSE, phased = FALSE, save_effects = FALSE){
+                                   joint_res = NULL,
+                                   joint_acceptance = NULL,
+                                   joint_res_dist = NULL,
+                                   par = FALSE, phased = FALSE, save_effects = FALSE, grid = 2000){
 
   #============ABC_scheme function for one rep=============
   scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center, phased = F){
@@ -52,12 +55,17 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
 
 
   # get the random values to run
-  run_parameters <- vector("list", length = length(parameter_distributions))
-  names(run_parameters) <- names(parameter_distributions)
-  for(i in 1:length(run_parameters)){
-    run_parameters[[i]] <- parameter_distributions[[i]](iters)
-  }
-  run_parameters <- as.data.frame(run_parameters)
+  run_parameters <- sample_parameters_from_distributions(parameter_distributions = parameter_distributions,
+                                                         joint_res = joint_res, iters = iters,
+                                                         joint_acceptance = joint_acceptance,
+                                                         joint_res_dist = joint_res_dist,
+                                                         reg_res = NULL, grid = grid)
+  # run_parameters <- vector("list", length = length(parameter_distributions))
+  # names(run_parameters) <- names(parameter_distributions)
+  # for(i in 1:length(run_parameters)){
+  #   run_parameters[[i]] <- parameter_distributions[[i]](iters)
+  # }
+  # run_parameters <- as.data.frame(run_parameters)
   h <- h_dist(iters)
 
   # initialize storage
@@ -93,7 +101,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
       }
     }
     if(save_effects){
-      return(list(dist = cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)), effects = effect_output))
+      return(list(ABC_res = cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)), effects = effect_output))
     }
     else{
       return(cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)))
@@ -103,18 +111,24 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
 
   # parallel
   else{
-    if(save_effects){
-      warning("For now, effects cannot be saved if run in parallel.\n")
-      save_effects <- F
-    }
+    # if(save_effects){
+    #   warning("For now, effects cannot be saved if run in parallel.\n")
+    #   save_effects <- F
+    # }
 
     cl <- snow::makeSOCKcluster(par)
     doSNOW::registerDoSNOW(cl)
 
     # divide up into ncore chunks
-    chunks <- list(parms = split(run_parameters, (1:iters)%%par),
-                   dist_output = split(as.data.frame(dist_output), (1:iters)%%par),
-                   h = split(as.data.frame(h), (1:iters)%%par))
+    it_par <- (1:iters)%%par
+    chunks <- list(parms = .smart_split(run_parameters, it_par),
+                   dist_output = .smart_split(as.data.frame(dist_output), it_par),
+                   h = .smart_split(as.data.frame(h), it_par))
+    if(save_effects){
+      chunks$effects <- .smart_split(as.data.frame(effect_output), it_par)
+      rm(effect_output)
+    }
+    rm(run_parameters, dist_output)
 
     # prepare reporting function
     progress <- function(n) cat(sprintf("Chunk %d out of", n), par, "is complete.\n")
@@ -127,6 +141,12 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                  parm_chunk <- chunks$parm[[q]]
                                  h_chunk <- unlist(chunks$h[[q]])
                                  dist_chunk <- chunks$dist_output[[q]]
+                                 if(save_effects){
+                                   effect_chunk <- chunks$effects[[q]]
+                                 }
+                                 else{
+                                   effect_chunk <- NULL
+                                 }
                                  is.err <- numeric(0)
                                  errs <- character(0)
 
@@ -144,18 +164,29 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                      errs <- c(errs, b)
                                    }
                                    else{
-                                     dist_chunk[i,] <- b
+                                     if(save_effects){
+                                       dist_chunk[i,] <- b$dist
+                                       effect_chunk[i,] <- b$effects
+
+                                     }
+                                     else{
+                                       dist_chunk[i,] <- b
+                                     }
                                    }
                                  }
                                  out <- vector("list", 2)
                                  names(out) <- c("successes", "fails")
+                                 out[[1]] <- vector("list", 2)
+                                 names(out[[1]]) <- c("parms", "effects")
                                  if(length(is.err) > 0){
-                                   out[[1]] <- cbind(parm_chunk[-is.err,], h = h_chunk[-is.err], dist_chunk[-is.err,])
+                                   out[[1]]$parms <- cbind(parm_chunk[-is.err,], h = h_chunk[-is.err], dist_chunk[-is.err,])
+                                   out[[1]]$effects <- effect_chunk[-is.err,]
                                    out[[2]] <- list(error_msg = errs,
                                                     error_parms = cbind(parm_chunk[is.err,,drop = F], h = h_chunk[is.err]))
                                  }
                                  else{
-                                   out[[1]] <- cbind(parm_chunk, h = h_chunk, dist_chunk)
+                                   out[[1]]$parms <- cbind(parm_chunk, h = h_chunk, dist_chunk)
+                                   out[[1]]$effects <- effect_chunk
                                    out[[2]] <- list(error_msg = character(0),
                                                     error_parms = as.data.frame(matrix(NA, ncol = ncol(parm_chunk) + 1, nrow = 1)))
                                    colnames(out[[2]]$error_parms) <- c(colnames(parm_chunk), "h")
@@ -167,7 +198,10 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
     parallel::stopCluster(cl)
     doSNOW::registerDoSNOW()
     gc();gc()
-    dat <- dplyr::bind_rows(purrr::map(output, 1))
+    dist_output <- dplyr::bind_rows(purrr::map(purrr::map(output, 1), 1))
+    if(save_effects){
+      effect_output <- dplyr::bind_rows(purrr::map(purrr::map(output, 1), 2))
+    }
     errs <- purrr::map(output, 2)
     err_parms <- dplyr::bind_rows(purrr::map(errs, 2))
     err_msgs <- unlist(purrr::map(errs, 1))
@@ -179,7 +213,10 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
     else{
       cat("Complete, no errors on any iterations.\n")
     }
-    return(list(ABC_res = dat, errors = errs))
+    if(save_effects){
+      return(list(ABC_res = dist_output, effects = effect_output, errors = errs))
+    }
+    return(list(ABC_res = dist_output, errors = errs))
   }
 }
 

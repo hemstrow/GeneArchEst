@@ -914,3 +914,39 @@ fetch_phenotypes_ranger <- function(genotypes, model, h, a.var = NULL, phased = 
 #'
 #' @format A character vector of length 729.
 "names_descriptive_stats"
+
+
+
+# given parameter distributions (some joint, some not), iters, and joint distribution results, returns sampled values
+sample_parameters_from_distributions <- function(parameter_distributions, iters, joint_res, joint_acceptance, joint_res_dist, reg_res, grid){
+  # if any joint parameter priors, calculate and disambiguate
+  joint_parms <- names(parameter_distributions)[which(parameter_distributions == "joint")]
+  parms <- as.data.frame(matrix(NA, iters, 0))
+  if(length(joint_parms) > 0){
+    parms <- cbind(parms, gen_parms(iters, joint_res, joint_acceptance, joint_parms, dist.var = joint_res_dist, grid = grid))
+  }
+  if(!is.null(reg_res)){
+    parms <- cbind(parms, sample_joint_quantile(iters, reg_res))
+  }
+  if(ncol(parms) < length(parameter_distributions)){
+    other_parms <- names(parameter_distributions)[which(!names(parameter_distributions) %in% colnames(parms))]
+    run_parameters <- vector("list", length = length(other_parms))
+    names(run_parameters) <- other_parms
+    for(i in 1:length(run_parameters)){
+      run_parameters[[i]] <- parameter_distributions[[other_parms[i]]](iters)
+    }
+    parms <- cbind(parms, as.data.frame(run_parameters))
+  }
+  run_parameters <- parms
+
+  return(as.data.frame(run_parameters))
+}
+
+.smart_split<- function(x, f, ...){
+  if(is.null(x)){
+    return(NULL)
+  }
+  else{
+    return(split(x, f, ...))
+  }
+}
