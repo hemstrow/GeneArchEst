@@ -366,6 +366,9 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
     a.ind <- a.ind[seq(1, length(a.ind), by = 2)] + a.ind[seq(2, length(a.ind), by = 2)] #add across both gene copies.
 
   }
+  if(is.matrix(a.ind)){
+    a.ind <- as.numeric(a.ind)
+  }
 
   # make sure h isn't 0, less than 0, or 1
   if(h <= 0){

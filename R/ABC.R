@@ -35,10 +35,23 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                    joint_res = NULL,
                                    joint_acceptance = NULL,
                                    joint_res_dist = NULL,
-                                   par = FALSE, phased = FALSE, save_effects = FALSE, grid = 2000){
+                                   par = FALSE, phased = FALSE,
+                                   save_effects = FALSE, grid = 2000,
+                                   save_effects_nkeep = ceiling(iters * .1),
+                                   save_effects_keep_var = "ks"){
+
+
+  if(!isFALSE(save_effects)){
+    look_for_files <- paste0(save_effects, c(".bk", ".rds"))
+    files_here <- file.exists(look_for_files)
+
+    if(any(files_here)){
+      stop(paste0("File(s) ", paste0(look_for_files[files_here], collapse = ", "), " already exist(s).\n"))
+    }
+  }
 
   #============ABC_scheme function for one rep=============
-  scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center, phased = F){
+  scheme_D <- function(x, phenotypes, effect_distribution, parameters, h, center = center, phased = F, save_effects = FALSE){
     pseudo <- generate_pseudo_effects(x, effect_distribution, parameters, h, center = center, phased = phased)
     dist <- compare_distributions(phenotypes, pseudo$p)
     if(save_effects){
@@ -60,6 +73,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                                          joint_acceptance = joint_acceptance,
                                                          joint_res_dist = joint_res_dist,
                                                          reg_res = NULL, grid = grid)
+  nparms <- ncol(run_parameters)
+
   # run_parameters <- vector("list", length = length(parameter_distributions))
   # names(run_parameters) <- names(parameter_distributions)
   # for(i in 1:length(run_parameters)){
@@ -71,9 +86,6 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
   # initialize storage
   dist_output <-  matrix(0, iters, ncol = length(names_diff_stats))
   colnames(dist_output) <- names_diff_stats
-  if(save_effects){
-    effect_output <- matrix(0, iters, ncol = nrow(x))
-  }
 
   #============ABC loop===================
   # run the ABC
@@ -81,7 +93,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
   if(par == F | par == 1){
 
     for(i in 1:iters){
-      cat("Iter: ", i, ".\n")
+      cat("Iter:", i, "\n")
 
       d <- scheme_D(x = x,
                     phenotypes = phenotypes,
@@ -89,32 +101,45 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                     parameters = as.list(run_parameters[i,,drop = F]),
                     h = h[i],
                     center = center,
-                    phased = phased)
+                    phased = phased, save_effects = !isFALSE(save_effects))
 
-      if(save_effects){
+      if(!isFALSE(save_effects)){
+        data.table::fwrite(cbind(run_parameters[i,,drop = F], h = h[i], data.table::as.data.table(matrix(d$effects, nrow = 1))),
+                           paste0(save_effects, ".tmp"), sep = "\t", col.names = FALSE, row.names = FALSE, append = TRUE)
         dist_output[i,] <- d$dist
-        effect_output[i,] <- d$effects
 
       }
       else{
         dist_output[i,] <- d
       }
     }
-    if(save_effects){
-      return(list(ABC_res = cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)), effects = effect_output))
+
+    dist_output <- as.data.frame(dist_output)
+
+    # filter saved effects
+    # read effects into an FBM and save if requested (only the keepers!)
+    if(!isFALSE(save_effects)){
+      cat("Collating written effects into an FBM.\n")
+      dist_output$keep <- FALSE
+      dist_output$keep[order(dist_output[,save_effects_keep_var])[1:save_effects_nkeep]] <- TRUE # keep only the nkeep best runs
+
+
+      effect_fbm <- bigstatsr::big_read(paste0(save_effects, ".tmp"),
+                                        filter = which(dist_output$keep),
+                                        select = 1:(nrow(x) + nparms + 1))
+
+      file.remove(paste0(save_effects, ".tmp"))
+
+      # save fbm
+      effect_fbm <- effect_fbm$save()
     }
-    else{
-      return(cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)))
-    }
+
+    return(cbind(as.data.table(run_parameters), h = h, as.data.table(dist_output)))
   }
 
 
   # parallel
   else{
-    # if(save_effects){
-    #   warning("For now, effects cannot be saved if run in parallel.\n")
-    #   save_effects <- F
-    # }
 
     cl <- snow::makeSOCKcluster(par)
     doSNOW::registerDoSNOW(cl)
@@ -124,15 +149,19 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
     chunks <- list(parms = .smart_split(run_parameters, it_par),
                    dist_output = .smart_split(as.data.frame(dist_output), it_par),
                    h = .smart_split(as.data.frame(h), it_par))
-    if(save_effects){
-      chunks$effects <- .smart_split(as.data.frame(effect_output), it_par)
-      rm(effect_output)
-    }
     rm(run_parameters, dist_output)
 
     # prepare reporting function
     progress <- function(n) cat(sprintf("Chunk %d out of", n), par, "is complete.\n")
     opts <- list(progress=progress)
+
+    need_removal <- paste0(save_effects, ".", 1:par, ".tmp.part")
+    need_removal <- need_removal[which(file.exists(need_removal))]
+    if(length(need_removal) > 0){
+      file.remove(need_removal)
+
+    }
+
 
     output <- foreach::foreach(q = 1:par, .inorder = FALSE, .errorhandling = "pass",
                                .options.snow = opts, .packages = c("data.table", "GeneArchEst", "bigstatsr")
@@ -141,12 +170,6 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                  parm_chunk <- chunks$parm[[q]]
                                  h_chunk <- unlist(chunks$h[[q]])
                                  dist_chunk <- chunks$dist_output[[q]]
-                                 if(save_effects){
-                                   effect_chunk <- chunks$effects[[q]]
-                                 }
-                                 else{
-                                   effect_chunk <- NULL
-                                 }
                                  is.err <- numeric(0)
                                  errs <- character(0)
 
@@ -158,35 +181,41 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
                                                      parameters = as.list(parm_chunk[i,,drop = F]),
                                                      h = h_chunk[i],
                                                      center = center,
-                                                     phased = phased), silent = T)
+                                                     phased = phased,
+                                                     save_effects = !isFALSE(save_effects)), silent = T)
+
+
                                    if(class(b) == "try-error"){
                                      is.err <- c(is.err, i)
                                      errs <- c(errs, b)
                                    }
                                    else{
-                                     if(save_effects){
+                                     if(!isFALSE(save_effects)){
+                                       data.table::fwrite(cbind(parm_chunk[i,,drop = F], h = h_chunk[i], data.table::as.data.table(matrix(b$effects, nrow = 1))),
+                                                          paste0(save_effects, ".", q, ".tmp.part"), sep = "\t", col.names = FALSE, row.names = FALSE, append = TRUE)
                                        dist_chunk[i,] <- b$dist
-                                       effect_chunk[i,] <- b$effects
-
                                      }
                                      else{
                                        dist_chunk[i,] <- b
                                      }
                                    }
                                  }
+
+
+                                 if(!isFALSE(save_effects)){
+                                   dist_chunk$q_id <- q
+                                   dist_chunk$iter_id <- 1:nrow(parm_chunk)
+                                 }
+
                                  out <- vector("list", 2)
                                  names(out) <- c("successes", "fails")
-                                 out[[1]] <- vector("list", 2)
-                                 names(out[[1]]) <- c("parms", "effects")
                                  if(length(is.err) > 0){
-                                   out[[1]]$parms <- cbind(parm_chunk[-is.err,], h = h_chunk[-is.err], dist_chunk[-is.err,])
-                                   out[[1]]$effects <- effect_chunk[-is.err,]
+                                   out[[1]] <- cbind(parm_chunk[-is.err,], h = h_chunk[-is.err], dist_chunk[-is.err,])
                                    out[[2]] <- list(error_msg = errs,
                                                     error_parms = cbind(parm_chunk[is.err,,drop = F], h = h_chunk[is.err]))
                                  }
                                  else{
-                                   out[[1]]$parms <- cbind(parm_chunk, h = h_chunk, dist_chunk)
-                                   out[[1]]$effects <- effect_chunk
+                                   out[[1]] <- cbind(parm_chunk, h = h_chunk, dist_chunk)
                                    out[[2]] <- list(error_msg = character(0),
                                                     error_parms = as.data.frame(matrix(NA, ncol = ncol(parm_chunk) + 1, nrow = 1)))
                                    colnames(out[[2]]$error_parms) <- c(colnames(parm_chunk), "h")
@@ -198,25 +227,73 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
     parallel::stopCluster(cl)
     doSNOW::registerDoSNOW()
     gc();gc()
-    dist_output <- dplyr::bind_rows(purrr::map(purrr::map(output, 1), 1))
-    if(save_effects){
-      effect_output <- dplyr::bind_rows(purrr::map(purrr::map(output, 1), 2))
-    }
+    dist_output <- dplyr::bind_rows(purrr::map(output, 1))
     errs <- purrr::map(output, 2)
     err_parms <- dplyr::bind_rows(purrr::map(errs, 2))
     err_msgs <- unlist(purrr::map(errs, 1))
     err_parms <- na.omit(err_parms)
     errs <- list(parms = err_parms, msgs = err_msgs)
+
+
+    # read effects into an FBM and save if requested (only the keepers!)
+    if(!isFALSE(save_effects)){
+      cat("Collating written effects into an FBM.\n")
+      dist_output$keep <- FALSE
+      dist_output$keep[order(dist_output[,save_effects_keep_var])[1:save_effects_nkeep]] <- TRUE # keep only the nkeep best runs
+
+
+      effect_fbm <- bigstatsr::FBM(save_effects_nkeep, nrow(x) + nparms + 1, backingfile = save_effects)
+
+
+      progress <- 0
+      for(i in 1:par){
+        correct_iter <- which(dist_output$q_id == i)
+
+        write_end <- sum(dist_output$keep[correct_iter])
+        if(write_end == 0){
+          next
+        }
+        tmpfile_bk <- stringi::stri_rand_strings(1, 20)
+        while(file.exists(tmpfile_bk)){
+          tmpfile_bk <- stringi::stri_rand_strings(1, 20)
+        }
+        tmp_fbm <- bigstatsr::big_read(paste0(save_effects, ".", i, ".tmp.part"),
+                                       select = 1:(nrow(x) + nparms + 1),
+                                       filter = which(dist_output$keep[correct_iter]),
+                                       backingfile = tmpfile_bk)
+
+        effect_fbm[(progress + 1):(progress + write_end),] <- tmp_fbm[]
+        rm(tmp_fbm)
+        gc();gc()
+
+
+
+        file.remove(paste0(tmpfile_bk, ".bk"))
+        file.remove(paste0(tmpfile_bk, ".rds"))
+
+        file.remove(paste0(save_effects, ".", i, ".tmp.part"))
+
+        progress <- progress + write_end
+      }
+
+      # clean dist_output
+      dist_output <- dplyr::arrange(dist_output, q_id, iter_id) # sort by q and i to make sure our orders all match up.
+      dist_output$q_id <- NULL
+      dist_output$iter_id <- NULL
+
+      # save fbm
+      effect_fbm <- effect_fbm$save()
+    }
+
+
     if(length(errs$msgs) > 0){
       warning("Errors occured on some ABC iterations. See named element 'errors' in returned list for details.\n")
+      return(list(ABC_res = dist_output, errors = errs))
     }
     else{
       cat("Complete, no errors on any iterations.\n")
+      return(dist_output)
     }
-    if(save_effects){
-      return(list(ABC_res = dist_output, effects = effect_output, errors = errs))
-    }
-    return(list(ABC_res = dist_output, errors = errs))
   }
 }
 

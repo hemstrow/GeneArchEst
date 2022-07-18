@@ -185,7 +185,6 @@ sim_gen <- function(x, meta, iters, center = T, scheme = "gwas",
 
   # run the simulations
   ## serial
-  browser()
   if(isFALSE(par) | par == 1){
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
