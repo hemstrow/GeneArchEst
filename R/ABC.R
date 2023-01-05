@@ -141,6 +141,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters,
   # parallel
   else{
 
+    par <- min(par, iters)
+
     cl <- snow::makeSOCKcluster(par)
     doSNOW::registerDoSNOW(cl)
 

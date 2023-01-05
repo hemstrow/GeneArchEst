@@ -359,18 +359,67 @@ e.dist.func <- function(A1, hist.a.var, h, standardize = F){
 
 #get phenotypic values given genotypes, effect sizes, and heritabilities. If hist.a.var is true, uses the amount of genomic variability this gen and h to figure out how big of an env effect to add. Otherwise uses the provided value (probably that in the first generation).
 #' @export
-get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize = FALSE, phased = F){
-  #get effect of each individual:
-  a.ind <- weighted.colSums(x, effect.sizes) # faster than t(x)%*%effect.sizes!
-  if(phased){
-    a.ind <- a.ind[seq(1, length(a.ind), by = 2)] + a.ind[seq(2, length(a.ind), by = 2)] #add across both gene copies.
+get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize = FALSE, phased = FALSE, fitnesses = TRUE){
 
-  }
-  if(is.matrix(a.ind)){
-    a.ind <- as.numeric(a.ind)
+  # additive
+  if(is.null(ncol(effect.sizes))){
+    if(fitnesses){
+      stop("Cannot supply additive effects with one value per locus if providing fitnesses.\n")
+    }
+
+    # remove zeros
+    zeros <- which(effect.sizes == 0)
+    if(length(zeros) != 0 & length(zeros) != length(effect.sizes)){
+      effect.sizes <- effect.sizes[-zeros]
+      x <- x[-zeros,, drop = FALSE]
+    }
+
+    #get effect of each individual:
+    a.ind <- weighted.colSums(x, effect.sizes) # faster than t(x)%*%effect.sizes!
+    if(phased){
+      a.ind <- a.ind[seq(1, length(a.ind), by = 2)] + a.ind[seq(2, length(a.ind), by = 2)] #add across both gene copies.
+    }
+    if(is.matrix(a.ind)){
+      a.ind <- as.numeric(a.ind)
+    }
   }
 
-  # make sure h isn't 0, less than 0, or 1
+  # non-additive (three effects)
+  else{
+    effect.sizes <- as.matrix(effect.sizes)
+
+    # remove zeros
+    zeros <- which(rowSums(effect.sizes) == ifelse(fitnesses, 3, 0))
+    if(length(zeros) != 0 & length(zeros) != nrow(effect.sizes)){
+      effect.sizes <- effect.sizes[-zeros,, drop = FALSE]
+      x <- x[-zeros,, drop = FALSE]
+    }
+
+
+    # fix if fitnesses
+    if(fitnesses){
+      effect.sizes[effect.sizes > 1] <- 1
+      effect.sizes[effect.sizes < 0] <- 0
+    }
+
+    if(phased){
+      x <- convert_2_to_1_column(x)
+      x <- t(x)
+    }
+
+    if(!fitnesses){
+      a.ind <- (x == 0)*effect.sizes[,1] + (x == 1)*effect.sizes[,2] + (x == 2)*effect.sizes[,3]
+      a.ind <- matrixStats::colSums2(a.ind)
+    }
+    else{
+      a.ind <- (x == 0)*effect.sizes[,1] + (x == 1)*effect.sizes[,2] + (x == 2)*effect.sizes[,3]
+      a.ind <- matrixStats::colProds(a.ind)
+    }
+  }
+
+
+
+  # make sure h isn't 0, less than 0, or greater than 1
   if(h <= 0){
     h <- 0.00000001
   }
@@ -387,12 +436,17 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
   #add environmental variance
   if(hist.a.var == "fgen"){
     pheno <- a.ind + e.dist.func(a.ind, var(a.ind), h, standardize)
-    return(list(p = pheno, a = a.ind))
   }
   else{
     pheno <- a.ind + e.dist.func(a.ind, hist.a.var, h, standardize)
-    return(list(p = pheno, a = a.ind))
   }
+
+  # set max to 1 if fitnesses
+  if(fitnesses){
+    pheno[pheno > 1] <- 1
+  }
+
+  return(list(p = pheno, a = a.ind))
 }
 
 #converts 2 column to 1 column genotypes and transposes

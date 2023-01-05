@@ -5,10 +5,46 @@
 #' @param genotypes unphased matrix of genotypes, one row per snp and one column
 #'   per chromosome/gene copy. Copies from individuals must be sequential.
 #' @param meta data.frame of snp metadata, with the first column containing
-#'   chromosome info, the second containing position in base pairs, and the
-#'   third, named "effects" optionally containing effect sizes.
+#'   chromosome info, the second containing position in base pairs. Effects can
+#'   either be in one column, named "effects", if all effects are additive or in
+#'   three columns named "effect_0", "effect_1", and "effect_2" for the effects
+#'   for homozygote "0" individuals, heterozygotes, and homozygote "2"
+#'   individuals, respectively.
 #' @param chr.length numeric vector of chromosome lengths \emph{in the same
 #'   order as would be given by unique(meta[,1])}.
+#' @param h numeric. Narrow-sense heritability, between 0 and 1.
+#' @param BVs numeric vector, breeding values for starting individuals. Either
+#'   this or \code{phenotypes} is required.
+#' @param phenotypes numeric vector, phenotypes for starting individuals. Either
+#'   this or \code{BVs} is required.
+#' @param gens numeric, maximum number of generations to simulate.
+#' @param growth.function function, default \code{function(n) logistic_growth(n,
+#'   500, 2)} the growth function to use during simulation, needs to take an
+#'   argument \code{n}, the number of current individuals.
+#' @param survival.function function, default \code{function(phenotypes,
+#'   opt_pheno, ...) BL_survival(phenotypes, opt_pheno, omega = 1)}. Function
+#'   for calculating survival probabilities of individuals. Needs two arguments:
+#'   \code{phenotypes}: individual phenotypes and \code{opt_pheno}: optimum
+#'   phenotype in a given generation.
+#' @param selection.shift.function function, default \code{function(opt, iv)
+#'   optimum_constant_slide(opt, iv, 0.3)}. Function for determining how much
+#'   the fitness optimum changes each generation. Expects two arguments:
+#'   \code{opt}: the current fitness optimum. \code{iv}: the initial genetic
+#'   variance (the fitness optimum can slide as a function of the amount of
+#'   initial genetic variance in the population).
+#' @param thin logical, default TRUE. If TRUE, sites with no effect will be
+#'   trimmed from analysis and reports unless all loci have no effects. This can
+#'   massively reduce run time if few sites have effects. Set to FALSE if, for
+#'   example, you wish to examine the effect of selection on linked, neutral
+#'   loci.
+#' @param fitnesses logical, default FALSE. If TRUE, effects are presumed to be
+#'   fitness coefficients  rather than sheer effects. Net fitness is therefore
+#'   the product off all effects. Fitnesses greater than 1 will be set to one,
+#'   and less than zero will be set to zero. Must provide "effect_0",
+#'   "effect_1", and "effect_2" columns to meta noting the fitness of each
+#'   genotype.
+#' @param stop_if_no_variance logical, default FALSE. If TRUE, will stop and
+#'   return an error if no genetic variance remains in the population.
 #' @export
 gs <- function(genotypes,
                meta,
@@ -25,18 +61,40 @@ gs <- function(genotypes,
                plot_during_progress = FALSE,
                facet = "group",
                do.sexes = TRUE,
+               fitnesses = FALSE,
                init = FALSE,
+               thin = TRUE,
                verbose = FALSE,
                print.all.freqs = F,
-               model = NULL, K_thin_post_surv = NULL){
+               model = NULL,
+               stop_if_no_variance = FALSE,
+               K_thin_post_surv = NULL){
 
   #========================prep===========================
   if(verbose){cat("Initializing...\n")}
   genotypes <- data.table::as.data.table(genotypes)
 
   # thin genotypes if possible
-  if("effect" %in% colnames(meta) & any(meta$effect != 0) & any(meta$effect == 0)){
-    zeros <- which(meta$effect == 0)
+  if("effect" %in% colnames(meta)){
+    additive <- TRUE
+    if("effect" %in% colnames(meta) & any(meta$effect != 0) & any(meta$effect == 0)){
+      if(fitnesses){
+        stop("Cannot supply fitnesses with additive effects denoted by a single effect per allele. Supply three columns instead.\n")
+      }
+      zeros <- which(meta$effect == 0)
+
+    }
+  }
+  else if(all(c("effect_0", "effect_1", "effect_2") %in% colnames(meta))){
+    additive <- FALSE
+    sum_effects <- rowSums(meta[,c("effect_0", "effect_1", "effect_2")])
+    zeros <- which(sum_effects == ifelse(fitnesses, 3, 0))
+  }
+  else{
+    stop("Cannot locate effects in meta.\n")
+  }
+
+  if(thin & length(zeros) != 0 & length(zeros) != nrow(meta)){
     nmeta <- meta[-zeros,]
     # if chromosomes are missing, need to remove them from
     # the chr.length vector
@@ -49,9 +107,16 @@ gs <- function(genotypes,
     genotypes <- genotypes[-zeros,]
   }
 
+
   if(is.null(phenotypes) | is.null(BVs)){
     if(is.null(model)){ # fectch from provided effects
-      p <- get.pheno.vals(genotypes, meta$effect, h = h, phased = T)
+      if(additive){
+        p <- get.pheno.vals(genotypes, meta$effect, h = h, phased = T, fitnesses = fitnesses)
+      }
+      else{
+        p <- get.pheno.vals(genotypes, meta[,c("effect_0", "effect_1", "effect_2")], h = h, phased = T, fitnesses = fitnesses)
+      }
+
     }
     else{ # fetch from model
       if(class(model) == "ranger"){
@@ -67,9 +132,10 @@ gs <- function(genotypes,
     rm(p)
   }
 
-  #================print out initial conditions, intiallize final steps, and run===========
-  #starting optimal phenotype, which is the starting mean addative genetic value.
+  #================print out initial conditions, initialize final steps, and run===========
+  #starting optimal phenotype, which is the starting mean additive genetic value.
   opt <- mean(BVs) #optimum phenotype
+  if(fitnesses){opt <- 1}
 
   if(verbose){
     cat("\n\n===============done===============\n\nStarting parms:\n\tstarting optimum phenotype:", opt,
@@ -88,9 +154,16 @@ gs <- function(genotypes,
     library(ggplot2)
     pdat <- reshape2::melt(out)
     colnames(pdat) <- c("Generation", "var", "val")
-    ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
-                         ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
-                         ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
+    if(!fitnesses){
+      ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
+                                        ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
+                                        ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
+    }
+    else{
+      ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
+                           ymin = c(0, 0, 0, 0, 0),
+                           ymax = c(out[1,1]*1.05, 1, 1, 1, 1))
+    }
     pdat <- merge(pdat, ranges, by = "var")
     print(ggplot(pdat, aes(Generation, val)) + geom_point(na.rm = T) +
             facet_wrap(~var, ncol = 1, scales = "free_y", strip.position = "left") +
@@ -117,10 +190,12 @@ gs <- function(genotypes,
   for(i in 2:(gens+1)){
     #=========survival====
     # get the optimum phenotype this gen
-    t.opt <- rnorm(1, opt, var.theta)
+    if(!fitnesses){t.opt <- rnorm(1, opt, var.theta)}
+    else{t.opt <- 1}
 
+    if(length(unique(phenotypes)) == 1 & phenotypes[1] != 1 & stop_if_no_variance){stop("No genetic variance left.\n")}
     #survival:
-    s <- rbinom(offn, 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
+    s <- rbinom(offn, 1, #survive or not? Number of draws is the pop size in prev gen, survival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
                 survival.function(phenotypes, t.opt))
 
     #if the population has died out, stop.
@@ -159,9 +234,16 @@ gs <- function(genotypes,
     if(plot_during_progress){
       pdat <- reshape2::melt(out)
       colnames(pdat) <- c("Generation", "var", "val")
-      ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
-                           ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
-                           ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
+      if(!fitnesses){
+        ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
+                             ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
+                             ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
+      }
+      else{
+        ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
+                             ymin = c(0, 0, 0, 0, 0),
+                             ymax = c(out[1,1]*1.05, 1, 1, 1, 1))
+      }
       pdat <- merge(pdat, ranges, by = "var")
       print(ggplot(pdat, aes(Generation, val)) + geom_line(na.rm = T) + geom_point(na.rm = T) +
               facet_wrap(~var, ncol = 1, scales = "free_y", strip.position = "left") +
@@ -196,10 +278,21 @@ gs <- function(genotypes,
 
     #get phenotypic/genetic values
     if(is.null(model)){
-      pa <- get.pheno.vals(genotypes, effect.sizes = meta$effect,
-                           h = h,
-                           hist.a.var = h.av,
-                           phased = T)
+      if(additive){
+        pa <- get.pheno.vals(genotypes, effect.sizes = meta$effect,
+                             h = h,
+                             hist.a.var = h.av,
+                             phased = T,
+                             fitnesses = fitnesses)
+      }
+      else{
+        pa <- get.pheno.vals(genotypes, effect.sizes = meta[,c("effect_0", "effect_1", "effect_2")],
+                             h = h,
+                             hist.a.var = h.av,
+                             phased = T,
+                             fitnesses = fitnesses)
+      }
+
     }
     else{
       if(class(model) == "ranger"){
@@ -212,7 +305,7 @@ gs <- function(genotypes,
 
 
     #adjust selection optima
-    opt <- selection.shift.function(opt, iv = sqrt(h.av))
+    if(!fitnesses){opt <- selection.shift.function(opt, iv = sqrt(h.av))}
 
     gc()
   }
