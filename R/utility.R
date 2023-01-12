@@ -359,7 +359,7 @@ e.dist.func <- function(A1, hist.a.var, h, standardize = F){
 
 #get phenotypic values given genotypes, effect sizes, and heritabilities. If hist.a.var is true, uses the amount of genomic variability this gen and h to figure out how big of an env effect to add. Otherwise uses the provided value (probably that in the first generation).
 #' @export
-get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize = FALSE, phased = FALSE, fitnesses = TRUE){
+get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize = FALSE, phased = FALSE, fitnesses = FALSE){
 
   # additive
   if(is.null(ncol(effect.sizes))){

@@ -35,5 +35,6 @@ Imports:
     mgcv,
     purrr,
     ranger,
+    readr,
     reshape2,
     snow
