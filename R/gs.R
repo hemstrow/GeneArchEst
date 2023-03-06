@@ -75,6 +75,7 @@ gs <- function(genotypes,
   genotypes <- data.table::as.data.table(genotypes)
 
   # thin genotypes if possible
+  zeros <- numeric()
   if("effect" %in% colnames(meta)){
     additive <- TRUE
     if("effect" %in% colnames(meta) & any(meta$effect != 0) & any(meta$effect == 0)){
