@@ -74,39 +74,42 @@ gs <- function(genotypes,
   if(verbose){cat("Initializing...\n")}
   genotypes <- data.table::as.data.table(genotypes)
 
-  # thin genotypes if possible
-  zeros <- numeric()
-  if("effect" %in% colnames(meta)){
-    additive <- TRUE
-    if("effect" %in% colnames(meta) & any(meta$effect != 0) & any(meta$effect == 0)){
-      if(fitnesses){
-        stop("Cannot supply fitnesses with additive effects denoted by a single effect per allele. Supply three columns instead.\n")
+  if(is.null(model)){
+    # thin genotypes if possible
+    zeros <- numeric()
+    if("effect" %in% colnames(meta)){
+      additive <- TRUE
+      if("effect" %in% colnames(meta) & any(meta$effect != 0) & any(meta$effect == 0)){
+        if(fitnesses){
+          stop("Cannot supply fitnesses with additive effects denoted by a single effect per allele. Supply three columns instead.\n")
+        }
+        zeros <- which(meta$effect == 0)
+
       }
-      zeros <- which(meta$effect == 0)
+    }
+    else if(all(c("effect_0", "effect_1", "effect_2") %in% colnames(meta))){
+      additive <- FALSE
+      sum_effects <- rowSums(meta[,c("effect_0", "effect_1", "effect_2")])
+      zeros <- which(sum_effects == ifelse(fitnesses, 3, 0))
+    }
+    else{
+      stop("Cannot locate effects in meta.\n")
+    }
 
+    if(thin & length(zeros) != 0 & length(zeros) != nrow(meta)){
+      nmeta <- meta[-zeros,]
+      # if chromosomes are missing, need to remove them from
+      # the chr.length vector
+      missing.chrs <- which(!unique(meta[,1]) %in% unique(nmeta[,1])) # which are now missing?
+      if(length(missing.chrs) > 0){
+        chr.length <- chr.length[-missing.chrs]
+      }
+      meta <- nmeta
+      rm(nmeta)
+      genotypes <- genotypes[-zeros,]
     }
   }
-  else if(all(c("effect_0", "effect_1", "effect_2") %in% colnames(meta))){
-    additive <- FALSE
-    sum_effects <- rowSums(meta[,c("effect_0", "effect_1", "effect_2")])
-    zeros <- which(sum_effects == ifelse(fitnesses, 3, 0))
-  }
-  else{
-    stop("Cannot locate effects in meta.\n")
-  }
 
-  if(thin & length(zeros) != 0 & length(zeros) != nrow(meta)){
-    nmeta <- meta[-zeros,]
-    # if chromosomes are missing, need to remove them from
-    # the chr.length vector
-    missing.chrs <- which(!unique(meta[,1]) %in% unique(nmeta[,1])) # which are now missing?
-    if(length(missing.chrs) > 0){
-      chr.length <- chr.length[-missing.chrs]
-    }
-    meta <- nmeta
-    rm(nmeta)
-    genotypes <- genotypes[-zeros,]
-  }
 
 
   if(is.null(phenotypes) | is.null(BVs)){
