@@ -101,10 +101,9 @@ init_pop <- function(x,
 
 #=======function to do a single generation of random mating===========
 #' @export
-rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE){
+rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, mutation = 0){
 
-  #-=========prep========
-
+  #==========prep========
   if(length(unique(meta[,1])) != length(chr.length)){
     stop("The number of unique chromosomes is not equal to the number of chromsome lengths provided.\n")
   }
@@ -112,7 +111,8 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE){
     x <- data.table::as.data.table(x)
   }
   facet <- colnames(meta)[1]
-  #=========get parents and assign gcs for the next gen====
+
+  #=========get parents and assign gcs for the next gen=======
   #make a new x with individuals in next gen
   ##find parents
   if(do.sexes){ # if there are two sexes
@@ -365,6 +365,12 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
   if(is.null(ncol(effect.sizes))){
     if(fitnesses){
       stop("Cannot supply additive effects with one value per locus if providing fitnesses.\n")
+    }
+
+    # if not loci/effects
+    if(length(effect.sizes) == 0){
+      return(list(p = rep(0, ncol(x)/2),
+                  a = rep(0, ncol(x)/2)))
     }
 
     # remove zeros

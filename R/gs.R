@@ -53,6 +53,10 @@ gs <- function(genotypes,
                h,
                gens,
                chr.length,
+               migration = FALSE,
+               starting.surv.opt = NULL,
+               mutation = 0,
+               mutation.effect.function = NULL,
                growth.function = function(n) logistic_growth(n, 500, 2),
                survival.function = function(phenotypes, opt_pheno, ...) BL_survival(phenotypes, opt_pheno, omega = 1),
                selection.shift.function = function(opt, iv) optimum_constant_slide(opt, iv, 0.3),
@@ -62,17 +66,295 @@ gs <- function(genotypes,
                facet = "group",
                do.sexes = TRUE,
                fitnesses = FALSE,
+               effects = NULL,
                init = FALSE,
                thin = TRUE,
+               thin_fixed = TRUE,
                verbose = FALSE,
                print.all.freqs = F,
+               print.all.thinned.freqs = FALSE,
+               sampling_point = "migrants",
                model = NULL,
                stop_if_no_variance = FALSE,
                K_thin_post_surv = NULL){
 
+  #============subfuctions============
+  # function completed each loop (done this way to allow for ease of multiple populations)
+  one_gen <- function(genotypes, phenotypes,
+                      BVs,
+                      effects,
+                      opt, fitnesses,
+                      survival.function,
+                      K_thin_post_surv,
+                      meta,
+                      rec.dist,
+                      chr.length,
+                      do.sexes,
+                      h.av,
+                      model,
+                      selection.shift.function,
+                      mutation,
+                      pass_surv_genos = FALSE){
+
+    #=========survival====
+    if(length(unique(phenotypes)) == 1 & phenotypes[1] != 1 & stop_if_no_variance){stop("No genetic variance left.\n")}
+
+    #survival:
+    s <- rbinom(ncol(genotypes)/2, 1, #survive or not? Number of draws is the pop size in prev gen, survival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
+                survival.function(phenotypes, opt))
+
+    #if the population has died out, stop.
+    if(sum(s) <= 1){
+      #adjust selection optima
+      return(NA)
+    }
+
+    # if doing carrying capacity on BREEDERS, not offspring, thin to K here.
+    if(!is.null(K_thin_post_surv)){
+      if(sum(s) > K_thin_post_surv){
+        s[which(s == 1)][sample(sum(s), sum(s) - K_thin_post_surv, F)] <- 0
+      }
+    }
+
+    #===============figure out next generation===============
+    #what is the pop size after growth?
+    offn <- round(growth.function(sum(s)))
+
+
+    #make a new x with the survivors
+    genotypes <- genotypes[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
+
+    # save parents if needed
+    if(pass_surv_genos){
+      final_genotypes <- genotypes
+      final_meta <- meta
+      final_effects <- effects
+    }
+
+    #=============do random mating, adjust selection, get new phenotype scores, get ready for next gen====
+    genotypes <- rand.mating(x = genotypes, N.next = offn, meta = meta, rec.dist = rec.dist, chr.length, do.sexes,
+                             mutation = mutation)
+    if(is.null(genotypes)){return(NA)} # return NA if empty (no individuals because everything was one sex)
+
+    if(pass_surv_genos){
+      return(list(genotypes = genotypes, final_genotypes = final_genotypes, final_meta = final_meta, final_effects = final_effects))
+    }
+    else{
+      return(genotypes)
+    }
+  }
+
+  do_mutation <- function(x.next, mutation, chr.length, meta, uf){
+    #================mutation===================================
+    # figure out number of mutations in each individual
+    nmut <- lapply(x.next, function(z){
+      if(!is.null(z)){return(rpois(ncol(z), mutation*sum(chr.length)))}
+      else{return(NULL)}
+    })
+    pops <- unlist(lapply(nmut, length))
+    nmut <- unlist(nmut)
+
+    # exit if no mutations
+    if(sum(nmut) == 0){
+      meta$new <- FALSE
+      return(list(genotypes = x.next, meta.next = meta, effects = effects))
+    }
+
+    # figure out positions for the mutations
+    positions <- sample(sum(chr.length), sum(nmut), TRUE)
+    chrs <- as.numeric(cut(positions, breaks = c(0, cumsum(chr.length))))
+    positions <- positions - c(0, cumsum(chr.length)[-length(chr.length)])[chrs]
+    inds <- rep(1:sum(pops), nmut) # which inds each mutation is in
+    mut_info <- data.table::data.table(chrs = chrs, position = positions, ind = inds)
+    # search for duplicates and re-sample them if they exist (unlikely)
+    dups <- duplicated(mut_info[,1:3])
+    loop_count <- 1
+    while(any(dups)){
+      if(loop_count > 20){
+        stop("Tried to fix a double mutation at one locus in one individual 20 times without success--are your chromosomes too small for your mutation rate?\n")
+      }
+      npos <- sample(sum(chr.length), sum(dups), TRUE)
+      nchrs <- as.numeric(cut(npos, breaks = c(0, cumsum(chr.length))))
+      npos <- npos - c(0, cumsum(chr.length)[-length(chr.length)])[nchrs]
+      chrs[dups] <- nchrs
+      positions[dups] <- npos
+
+      mut_info$chrs[dups] <- nchrs
+      mut_info$position[dups] <- npos
+
+      loop_count <- loop_count + 1
+      dups <- duplicated(mut_info[,1:3])
+    }
+
+    # finish making the info df
+    inds <- rep(1:sum(pops), nmut) # which inds each mutation is in
+    mut_info <- dplyr::arrange(mut_info, inds, chrs, positions)
+    mut_info_index <- unique(mut_info[,1:2])
+    mut_info_index$row <- 1:nrow(mut_info_index)
+    mut_info <- merge(mut_info, mut_info_index)
+
+    # get effects and thin if doing so
+    mut.eff <- matrix(NA, nrow(mut_info_index), npops)
+    if(length(mutation.effect.function) > 1){
+      for(i in 1:npops){
+        mut.eff[,i] <- mutation.effect.function[[i]](nrow(mut_info_index))
+      }
+    }
+    else{
+      mut.eff[,1:npops] <- mutation.effect.function(nrow(mut_info_index))
+    }
+
+
+    # thin if requested
+    if(thin){
+      zeros <- which(rowSums(mut.eff) == 0)
+
+      # cut and return if empty
+      if(length(zeros) == nrow(mut_info_index)){
+        meta$new <- FALSE
+        return(list(x.next = x.next, meta.next = meta, effects = effects))
+      }
+
+      # otherwise adjust row info
+      mut_info_index <- mut_info_index[-zeros,]
+      mut_info <- mut_info[-which(mut_info$row %in% zeros),]
+      mut_info_index$row <- 1:nrow(mut_info_index)
+      mut_info$row <- NULL
+      mut_info <- merge(mut_info, mut_info_index)
+      mut.eff <- mut.eff[-zeros,,drop=FALSE]
+    }
+
+    # make the data
+    mut.x <- matrix(0, nrow(mut_info_index), sum(pops))
+    mut.x[mut_info$row + ((mut_info$ind - 1) * nrow(mut.x))] <- 1
+    mut.x <- as.data.table(mut.x)
+    mut_info$chrs <- uf[mut_info$chrs]
+
+    # determine if any new sites overlap the existing ones
+    overlap_i_in_ref <- which(paste0(meta[,1], "_", meta[,2]) %in% paste0(mut_info$chrs, "_", mut_info$position))
+    if(length(overlap_i_in_ref) > 0){
+      overlap_i_in_mut <- match(paste0(meta[overlap_i_in_ref,1], "_", meta[overlap_i_in_ref,2]),
+                                paste0(mut_info$chrs, "_", mut_info$position))
+
+      # flip any overlaps, then remove these from the data
+      for(i in 1:npops){
+        this_pops <- which(mut_info[overlap_i_in_mut,]$ind > c(0, cumsum(pops))[i] &
+                             mut_info[overlap_i_in_mut,]$ind <= c(0, cumsum(pops))[i + 1])
+        # move to next pop if none in this one
+        if(length(this_pops) == 0){next}
+
+        # find the overlaps in this pop
+        t.overlaps <- mut_info[overlap_i_in_mut,][this_pops]
+        t.overlaps$ind <- t.overlaps$ind - c(0, cumsum(pops))[i]
+        t.overlap.cols <- t.overlaps$ind
+
+        # grab those rows, locate mutations, flip, and then update
+        overlap_fill <- as.matrix(x.next[[i]][,..t.overlap.cols])
+        overlap_indices <- t.overlaps$row + nrow(overlap_fill)*((1:nrow(t.overlaps)) - 1)
+        overlap_fill[overlap_indices] <- ifelse(overlap_fill[overlap_indices] == 0, 1, 0)
+        overlap_fill <- data.table::as.data.table(matrix(overlap_fill, nrow = nrow(x.next[[i]])))
+
+        # fix the niche case where there are two mutation overlaps in one individual
+        o_dups <- which(duplicated(t.overlap.cols) | duplicated(t.overlap.cols, fromLast = TRUE))
+        if(length(o_dups) > 0){
+          o_inds <- unique(t.overlap.cols[o_dups])
+          rm_cols <- numeric(0)
+
+          # for each dup, usually only one
+          for(q in 1:length(o_inds)){
+            toc <- o_inds[q]
+            t_dup_fill <- as.matrix(x.next[[i]][,..toc])
+            t_dup_fill[t.overlaps[ind == toc,]$row] <- ifelse(t_dup_fill[t.overlaps[ind == toc,]$row] == 0, 1, 0)
+            data.table::set(overlap_fill, i = as.integer(1:nrow(overlap_fill)), j = which(t.overlap.cols == toc)[1], t_dup_fill)
+            rm_cols <- c(rm_cols, which(t.overlap.cols == toc)[-1])
+          }
+
+          overlap_fill <- overlap_fill[,-..rm_cols]
+          t.overlap.cols <- t.overlap.cols[-rm_cols]
+        }
+
+        # set
+        data.table::set(x.next[[i]],
+                        i = as.integer(1:nrow(x.next[[i]])),
+                        j = as.integer(t.overlap.cols),
+                        overlap_fill)
+      }
+
+      mut.eff <- mut.eff[-unique(mut_info$row[overlap_i_in_mut]),]
+      mut_info_index <- mut_info_index[-which(mut_info_index$row %in% mut_info$row[overlap_i_in_mut]),]
+      mut.x <- mut.x[-overlap_i_in_mut,, drop = FALSE]
+    }
+
+    # split into pops
+    empties <- which(pops == 0)
+    mut.x <- split(data.table::transpose(mut.x), rep(1:npops, pops))
+    mut.x <- lapply(mut.x, data.table::transpose)
+    if(length(empties) > 0){
+      rep.mut.x <- vector("list", npops)
+      rep.mut.x[-empties] <- mut.x
+      mut.x <- rep.mut.x; rm(rep.mut.x)
+    }
+
+    for(i in 1:npops){
+      if(!is.null(x.next[[i]])){
+        x.next[[i]] <- rbind(x.next[[i]], mut.x[[i]])
+      }
+    }
+    effects <- rbind(effects, mut.eff)
+    mut_info_index$chrs <- uf[mut_info_index$chrs]
+    mut_info_index$new <- TRUE
+    meta$new <- FALSE
+    mut_info_index$row <- NULL
+    colnames(mut_info_index) <- colnames(meta)
+    meta.next <- rbind(meta, mut_info_index)
+
+
+
+    return(list(x = x.next, meta.next = meta.next, effects = effects))
+  }
+
+  update_phenotypes <- function(genotypes, effects, h, h.av, fitnesses, model = NULL){
+    for(j in 1:length(genotypes)){
+      if(is.null(model)){
+        if(additive){
+          pa <- get.pheno.vals(genotypes[[j]], effect.sizes = effects[,j],
+                               h = h,
+                               hist.a.var = h.av[j],
+                               phased = T,
+                               fitnesses = fitnesses)
+        }
+        else{
+          pa <- get.pheno.vals(genotypes, effect.sizes = meta[,c("effect_0", "effect_1", "effect_2")],
+                               h = h,
+                               hist.a.var = h.av[j],
+                               phased = T,
+                               fitnesses = fitnesses)
+        }
+
+      }
+      else{
+        if(class(model) == "ranger"){
+          suppressWarnings(pa <- fetch_phenotypes_ranger(genotypes[[j]], model, h, h.av[j]))
+        }
+      }
+
+      BVs[[j]] <- pa$a
+      phenotypes[[j]] <- pa$p
+    }
+
+    return(list(BV = BVs, phenotypes = phenotypes))
+  }
+
   #========================prep===========================
   if(verbose){cat("Initializing...\n")}
-  genotypes <- data.table::as.data.table(genotypes)
+  if(!is.list(genotypes)){
+    genotypes <- list(genotypes)
+  }
+  genotypes <- lapply(genotypes, data.table::as.data.table)
+  if(length(unique(unlist(lapply(genotypes, nrow)))) != 1){
+    stop("All genotype matrices must have the same number of loci.\n")
+  }
+  npops <- length(genotypes)
 
   if(is.null(model)){
     # thin genotypes if possible
@@ -85,12 +367,23 @@ gs <- function(genotypes,
         }
         zeros <- which(meta$effect == 0)
 
+        effects <- as.matrix(meta[,"effect", drop = FALSE])
       }
     }
     else if(all(c("effect_0", "effect_1", "effect_2") %in% colnames(meta))){
       additive <- FALSE
       sum_effects <- rowSums(meta[,c("effect_0", "effect_1", "effect_2")])
       zeros <- which(sum_effects == ifelse(fitnesses, 3, 0))
+    }
+    else if(!is.null(effects)){
+      if(!is.matrix(effects)){
+        effects <- matrix(effects, ncol = 1)
+      }
+      if(nrow(effects) != nrow(genotypes[[1]])){
+        stop("The number of locus effects is not equal to the number of loci.")
+      }
+      zeros <- which(rowSums(effects) == 0)
+      additive <- TRUE
     }
     else{
       stop("Cannot locate effects in meta.\n")
@@ -106,224 +399,405 @@ gs <- function(genotypes,
       }
       meta <- nmeta
       rm(nmeta)
-      genotypes <- genotypes[-zeros,]
+      genotypes <- lapply(genotypes, function(x) x[-zeros,])
+      effects <- effects[-zeros,,drop = FALSE]
     }
   }
 
 
 
   if(is.null(phenotypes) | is.null(BVs)){
-    if(is.null(model)){ # fectch from provided effects
-      if(additive){
-        p <- get.pheno.vals(genotypes, meta$effect, h = h, phased = T, fitnesses = fitnesses)
-      }
-      else{
-        p <- get.pheno.vals(genotypes, meta[,c("effect_0", "effect_1", "effect_2")], h = h, phased = T, fitnesses = fitnesses)
-      }
+    need_phenos <- is.null(phenotypes)
+    need_BVs <- is.null(BVs)
 
-    }
-    else{ # fetch from model
-      if(class(model) == "ranger"){
-        p <- fetch_phenotypes_ranger(genotypes, model, h, phased = T)
+    for(i in 1:npops){
+      if(is.null(model)){ # fectch from provided effects
+        if(additive){
+          p <- get.pheno.vals(genotypes[[i]], effects[,i], h = h, phased = T, fitnesses = fitnesses)
+        }
+        else{
+          p <- get.pheno.vals(genotypes[[i]], meta[,c("effect_0", "effect_1", "effect_2")], h = h, phased = T, fitnesses = fitnesses)
+        }
+
       }
+      else{ # fetch from model
+        if(class(model) == "ranger"){
+          p <- fetch_phenotypes_ranger(genotypes[[i]], model, h, phased = T)
+        }
+      }
+      if(need_phenos){
+        if(is.null(phenotypes)){
+          phenotypes <- vector("list", npops)
+        }
+        phenotypes[[i]] <- p$p
+      }
+      if(need_BVs){
+        if(is.null(BVs)){
+          BVs <- vector("list", npops)
+        }
+        BVs[[i]] <- p$a
+      }
+      rm(p)
     }
-    if(is.null(phenotypes)){
-      phenotypes <- p$p
-    }
-    if(is.null(BVs)){
-      BVs <- p$a
-    }
-    rm(p)
   }
+
+  colnames(effects) <- paste0("effects_", 1:npops)
 
   #================print out initial conditions, initialize final steps, and run===========
   #starting optimal phenotype, which is the starting mean additive genetic value.
-  opt <- mean(BVs) #optimum phenotype
-  if(fitnesses){opt <- 1}
+  if(is.null(starting.surv.opt)){
+    opt <- unlist(lapply(BVs, mean)) #optimum phenotype
+    if(fitnesses){opt <- rep(1, length(opt))}
+  }
+  else if(length(starting.surv.opt) == 1){
+    opt <- rep(starting.surv.opt, length(genotypes))
+  }
+  else{
+    opt <- starting.surv.opt
+  }
+
 
   if(verbose){
     cat("\n\n===============done===============\n\nStarting parms:\n\tstarting optimum phenotype:", opt,
-        "\n\tmean phenotypic value:", mean(phenotypes), "\n\taddative genetic variance:", var(BVs), "\n\tphenotypic variance:", var(phenotypes), "\n\th:", h, "\n")
+        "\n\tmean phenotypic value:", paste0(unlist(lapply(phenotypes, mean)), collapse = ", "),
+        "\n\taddative genetic variance:", paste0(unlist(lapply(BVs, var)), collapse = ", "),
+        "\n\tphenotypic variance:", paste0(unlist(lapply(phenotypes, var)), collapse = ", "), "\n\th:", h, "\n")
   }
 
   #make output matrix and get initial conditions
-  out <- matrix(NA, nrow = gens + 1, ncol = 8)
+  out <- array(NA, c(gens + 1, 8, npops))
   colnames(out) <- c("N", "mu_phenotypes", "mu_BVs", "opt", "diff", "var_BVs", "stochastic_opt", "gen")
-  N <- ncol(genotypes)/2 #initial pop size
-  h.av <- var(BVs) #get the historic addative genetic variance.
-  h.pv <- var(phenotypes) #historic phenotypic variance.
+  N <- unlist(lapply(genotypes, ncol))/2 #initial pop size
+  h.av <- unlist(lapply(BVs, var)) #get the historic addative genetic variance.
+  h.pv <- unlist(lapply(phenotypes, var)) #historic phenotypic variance.
 
-  out[1,] <- c(NA, mean(phenotypes), mean(BVs), opt, 0, h.av, opt, 1) #add this and the mean initial additive genetic variance
+  out[1,,] <- t(as.matrix(data.frame(N,
+                                     unlist(lapply(phenotypes, mean)),
+                                     unlist(lapply(BVs, mean)),
+                                     opt, 0, h.av, opt, 0))) #add this and the mean initial additive genetic variance
   if(plot_during_progress){
-    library(ggplot2)
-    pdat <- reshape2::melt(out)
-    colnames(pdat) <- c("Generation", "var", "val")
-    if(!fitnesses){
-      ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
-                                        ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
-                                        ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
-    }
-    else{
-      ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
-                           ymin = c(0, 0, 0, 0, 0),
-                           ymax = c(out[1,1]*1.05, 1, 1, 1, 1))
-    }
-    pdat <- merge(pdat, ranges, by = "var")
-    print(ggplot(pdat, aes(Generation, val)) + geom_point(na.rm = T) +
-            facet_wrap(~var, ncol = 1, scales = "free_y", strip.position = "left") +
-            geom_blank(aes(y = ymin)) +
-            geom_blank(aes(y = ymax)) +
-            theme_bw() + xlim(c(0, max(pdat$Generation))) +
-            theme(strip.placement = "outside", axis.title.y = element_blank(), strip.background = element_blank(),
-                  strip.text = element_text(size = 11)))
+    pdat <- apply(out, 3, function(x) reshape2::melt(as.data.frame(x), id.vars = "gen"))
+    pdat <- data.table::rbindlist(pdat, idcol = "pop")
+    colnames(pdat) <- c("pop", "Generation", "var", "val")
+    pdat$pop <- as.factor(pdat$pop)
+    pdat <- na.omit(pdat)
+    print(ggplot2::ggplot(pdat, ggplot2::aes(Generation, val)) + ggplot2::geom_point(na.rm = T) +
+            ggh4x::facet_grid2(pop~var, scales = "free_y", independent = "y") +
+            ggplot2::theme_bw() +
+            ggplot2::scale_x_continuous(limits = c(1, gens), breaks = scales::pretty_breaks()) +
+            ggplot2::theme(strip.placement = "outside", axis.title.y = ggplot2::element_blank(),
+                           strip.background = ggplot2::element_blank(),
+                  strip.text = ggplot2::element_text(size = 11)))
   }
 
   #initialize matrix to return allele frequencies if requested.
   if(print.all.freqs){
-    a.fqs <- matrix(0, nrow(meta), gens + 1)
-    a.fqs[,1] <- rowSums(x)/ncol(x)
+    num <- c(NA, 0)
+    a.fqs <- array(num[1], c(nrow(meta), gens + 1, npops))
+    a.fqs[,1,] <- unlist(lapply(genotypes, function(x) rowSums(x)/ncol(x)))
   }
 
-  #================loop through each additional gen, doing selection, survival, and fisher sampling of survivors====
+
+
+  if(!is.list(survival.function)){
+    survival.function <- list(survival.function)[rep(1, npops)]
+  }
+  if(!is.list(rec.dist)){
+    rec.dist <- list(rec.dist)[rep(1, npops)]
+  }
+  if(!is.list(selection.shift.function)){
+    selection.shift.function <- list(selection.shift.function)[rep(1, npops)]
+  }
+
+  if(length(K_thin_post_surv) == 1){
+    K_thin_post_surv <- rep(K_thin_post_surv, npops)
+  }
+
+  if(length(chr.length) == 1){
+    chr.length <- rep(chr.length, length(unique(meta[,1])))
+  }
+
+  if(length(mutation) == 1){
+    mutation <- rep(mutation, length(genotypes))
+  }
+
+  if(is.list(mutation.effect.function)){
+    if(length(mutation.effect.function) != npops){
+      stop("Either a single mutation effect function or one for each population must be provided.\n")
+    }
+  }
+
+  if(length(var.theta) == 1){
+    var.theta <- rep(var.theta, npops)
+  }
+
+
 
   if(verbose){
     cat("\nBeginning run...\n\n================================\n\n")
   }
 
-  offn <- N
+  # init thinned tracker, which won't be updated if not thinning fixed loci
+  track_thinned_afs <- thin_fixed & print.all.freqs & print.all.thinned.freqs
+  if(track_thinned_afs){
+    thinned_a.fqs <- array(NA, c(0, ncol(a.fqs), npops))
+    thinned_effects <- matrix(NA, 0, ncol(effects))
+  }
+  else{
+    thinned_a.fqs <- NULL
+    thinned_effects <- NULL
+  }
+
+  #================loop through each additional gen, doing selection, survival, and fisher sampling of survivors====
+
   for(i in 2:(gens+1)){
-    #=========survival====
-    # get the optimum phenotype this gen
-    if(!fitnesses){t.opt <- rnorm(1, opt, var.theta)}
-    else{t.opt <- 1}
 
-    if(length(unique(phenotypes)) == 1 & phenotypes[1] != 1 & stop_if_no_variance){stop("No genetic variance left.\n")}
-    #survival:
-    s <- rbinom(offn, 1, #survive or not? Number of draws is the pop size in prev gen, survival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
-                survival.function(phenotypes, t.opt))
+    if(thin_fixed){
+      fixed <- lapply(genotypes, function(z) rowSums(z) == 0)
+      fixed <- matrix(unlist(fixed), ncol = length(genotypes))
+      fixed <- which(rowSums(fixed) == ncol(fixed))
 
-    #if the population has died out, stop.
-    if(sum(s) <= 1){
-      break
-    }
+      if(length(fixed) > 0){
+        genotypes <- lapply(genotypes, function(z) z[-fixed,])
+        meta <- meta[-fixed,,drop=FALSE]
 
-    # if doing carrying capacity on BREEDERS, not offspring, thin to K here.
-    if(!is.null(K_thin_post_surv)){
-      if(sum(s) > K_thin_post_surv){
-        s[which(s == 1)][sample(sum(s), sum(s) - K_thin_post_surv, F)] <- 0
+        # pull thinned loci out of a.fq
+        if(print.all.freqs){
+
+          if(track_thinned_afs){
+            new_thinned_a.fqs <- array(NA, c(nrow(thinned_a.fqs) + length(fixed), ncol(thinned_a.fqs), npops))
+            if(nrow(thinned_a.fqs) > 0){new_thinned_a.fqs[1:nrow(thinned_a.fqs),,] <- thinned_a.fqs}
+            new_thinned_a.fqs[(nrow(thinned_a.fqs)+1):nrow(new_thinned_a.fqs),,] <- a.fqs[fixed,,]
+            thinned_a.fqs <- new_thinned_a.fqs
+            rm(new_thinned_a.fqs)
+            thinned_effects <- rbind(thinned_effects, effects[fixed,,drop=FALSE])
+          }
+          a.fqs <- a.fqs[-fixed,,]
+        }
+
+        effects <- effects[-fixed,,drop=FALSE]
       }
     }
 
-    #===============save output============
+    gen_res <- vector("list", npops)
 
-    # update output and report
-    out[i,1] <- sum(s)
-    out[i,2] <- mean(phenotypes)
-    out[i,3] <- mean(BVs)
-    out[i,4] <- opt
-    out[i,5] <- opt - mean(BVs)
-    out[i,6] <- var(BVs)
-    out[i,7] <- t.opt
+    # get the optimum phenotype(s) this gen
+    t.opt <- opt
+    for(j in 1:npops){
+      if(!fitnesses){t.opt[j] <- rnorm(1, opt[j], var.theta[j])}
+      else{t.opt[j] <- 1}
+    }
+
+    # if(length(unique(unlist(lapply(genotypes, nrow)))) != 1){
+    #   browser()
+    # }
+
+    for(j in 1:npops){
+      if(!is.null(genotypes[[j]])){
+        genotypes[[j]] <- one_gen(genotypes = genotypes[[j]],
+                                phenotypes = phenotypes[[j]],
+                                BVs = BVs[[j]],
+                                effects = effects[,j],
+                                opt = t.opt[j],
+                                fitnesses = ifelse(isFALSE(fitnesses), FALSE, fitnesses[[j]]),
+                                survival.function = survival.function[[j]],
+                                K_thin_post_surv = K_thin_post_surv[j],
+                                meta = meta,
+                                rec.dist = rec.dist[[j]],
+                                chr.length = chr.length,
+                                do.sexes = do.sexes,
+                                h.av = h.av[j],
+                                model = model,
+                                selection.shift.function = selection.shift.function[[j]],
+                                mutation = mutation[j],
+                                pass_surv_genos = ifelse(i == gens + 1 & sampling_point == "parents",
+                                                         TRUE, FALSE)
+                                )
+      }
+    }
+
+    if(i == gens + 1 & sampling_point == "parents"){
+      final_genotypes <- purrr::map(genotypes, "final_genotypes")
+      final_meta <- purrr::map(genotypes, "final_meta")
+      final_effects <- purrr::map(genotypes, "final_effects")
+      genotypes <- purrr::map(genotypes, "genotypes")
+
+      pa <- update_phenotypes(genotypes = genotypes, effects = effects, h = h, h.av = h.av,
+                              fitnesses = fitnesses, model = model)
+
+      final_BVs <- pa$BV; final_phenotypes <- pa$phenotypes
+
+      final_genotypes <- lapply(final_genotypes, function(z){
+        if(!is.data.table(z)){
+          return(NULL)
+        }
+        else{
+          return(z)
+        }
+      })
+    }
+
+    # replace NAs with NULLs, done this way to prevent list element removal
+    genotypes <- lapply(genotypes, function(z){
+      if(!is.data.table(z)){
+        return(NULL)
+      }
+      else{
+        return(z)
+      }
+    })
+
+
+
+    #====mutation======
+    if(any(mutation > 0)){
+      muts <- do_mutation(genotypes,
+                          chr.length = chr.length, mutation = mutation,
+                          meta = meta, uf = unique(meta[,1]))
+      genotypes <- muts$x
+      meta <- muts$meta.next
+      meta$new <- NULL
+      effects <- muts$effects
+
+      # if tracking allele frequencies, add the new loci
+      if(print.all.freqs & any(muts$meta.next$new)){
+        new_a.fqs <- array(NA, c(nrow(meta), ncol(a.fqs), npops))
+        new_a.fqs[1:nrow(a.fqs), 1:ncol(a.fqs),] <- a.fqs
+        a.fqs <- new_a.fqs
+        rm(new_a.fqs)
+      }
+
+      rm(muts); gc(FALSE)
+    }
+
+    #========migration================
+    if(sampling_point == "offspring" & i == gens + 1){
+      final_genotypes <- genotypes
+      final_meta <- meta
+      final_effects <- effects
+      pa <- update_phenotypes(genotypes = genotypes, effects = effects, h = h, h.av = h.av,
+                              fitnesses = fitnesses, model = model)
+
+      final_BVs <- pa$BV; final_phenotypes <- pa$phenotypes
+    }
+
+    if(!isFALSE(migration)){
+      dest <- vector("list", npops)
+      new_genotypes <- dest
+
+      # if(any(unlist(lapply(genotypes, is.null)))){browser()}
+
+
+      # assign destinations according to migration probabilities
+      for(k in 1:npops){
+        if(!is.null(genotypes[[k]])){
+          dest[[k]] <- rmultinom(1, ncol(genotypes[[k]])/2, migration[,k])
+          dest[[k]] <- rep(1:nrow(dest[[k]]), dest[[k]])
+          dest[[k]] <- sample(dest[[k]], length(dest[[k]]), FALSE)
+        }
+      }
+
+      # move
+      nsizes <- table(unlist(dest))
+      for(k in 1:npops){ # into k
+        new_genotypes[[k]] <- data.table::as.data.table(matrix(0, ncol = nsizes[k]*2, nrow = max(unlist(lapply(genotypes, nrow)))))
+        prog <- 0
+
+        if(ncol(new_genotypes[[k]]) > 0){
+          for(j in 1:npops){ # from j
+            if(!is.null(genotypes[[j]])){
+              movers <- which(rep(dest[[j]], each = 2) == k)
+
+              if(length(movers) > 0){
+                data.table::set(new_genotypes[[k]], i = 1:nrow(new_genotypes[[k]]), j = (prog + 1):(prog + sum(dest[[j]] == k)*2),
+                                genotypes[[j]][,..movers])
+
+                prog <- (prog + (sum(dest[[j]] == k)*2))
+              }
+            }
+          }
+        }
+        else{
+          new_genotypes[[k]] <- 0
+        }
+      }
+
+      genotypes <- new_genotypes
+      rm(new_genotypes);gc(verbose = FALSE)
+    }
+
+    #========update phenotypes, etc==============
+    # update genotypes, phenotypes, BVs, optima
+    pa <- update_phenotypes(genotypes = genotypes, effects = effects, h = h, h.av = h.av,
+                            fitnesses = fitnesses, model = model)
+
+    BVs <- pa$BV; phenotypes <- pa$phenotypes
+
+    if(sampling_point == "migrants" & i != gens + 1){
+      final_BVs <- BVs; final_phenotypes <- phenotypes
+      final_meta <- meta
+      final_genotypes <- genotypes
+      final_effects <- effects
+    }
+
+    #========progress report==========
+    out[i,1,] <- unlist(lapply(genotypes, function(x) sum(ncol(x)/2)))
+    out[i,2,] <- unlist(lapply(phenotypes, mean))
+    out[i,3,] <- unlist(lapply(BVs, mean))
+    out[i,4,] <- opt
+    out[i,5,] <- opt - out[i,3,]
+    out[i,6,] <- unlist(lapply(BVs, var))
+    out[i,7,] <- t.opt
+    out[i,8,] <- i - 1
+
     if(verbose){
-      cat("gen:", i,
-          "\tf_opt:", round(out[i,4],3),
-          "\ts_opt", round(out[i,7],3),
-          "\tmean(BVs):", round(out[i,3],3),
-          "\tvar(BVs):", round(out[i,6],3),
-          "\tlag:", round(out[i,4],3) - round(out[i,3],3),
-          "\tN:", out[i,1],"\n")
+      cat("gen:", i - 1,
+          "\tfixed_opt:", paste0(round(out[i,4,],3), collapse = ","),
+          "\tstoch_opt", paste0(round(out[i,7,],3), collapse = ","),
+          "\tmean(BVs):", paste0(round(out[i,3,],3), collapse = ","),
+          "\tvar(BVs):", paste0(round(out[i,6,],3), collapse = ","),
+          "\tlag:", paste0(round(out[i,4,],3) - round(out[i,3,],3), collapse = ","),
+          "\tN:", paste0(out[i,1,], collapse = ","),"\n")
     }
 
-    # plot
     if(plot_during_progress){
-      pdat <- reshape2::melt(out)
-      colnames(pdat) <- c("Generation", "var", "val")
-      if(!fitnesses){
-        ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
-                             ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
-                             ymax = c(out[1,1]*1.05, 0, 0, 0, 10))
-      }
-      else{
-        ranges <- data.frame(var = c("N", "mu_phenotypes", "mu_BVs", "opt", "diff"),
-                             ymin = c(0, 0, 0, 0, 0),
-                             ymax = c(out[1,1]*1.05, 1, 1, 1, 1))
-      }
-      pdat <- merge(pdat, ranges, by = "var")
-      print(ggplot(pdat, aes(Generation, val)) + geom_line(na.rm = T) + geom_point(na.rm = T) +
-              facet_wrap(~var, ncol = 1, scales = "free_y", strip.position = "left") +
-              geom_blank(aes(y = ymin)) +
-              geom_blank(aes(y = ymax)) +
-              theme_bw() + xlim(c(0, max(pdat$Generation))) +
-              theme(strip.placement = "outside", axis.title.y = element_blank(), strip.background = element_blank(),
-                    strip.text = element_text(size = 11)))
+      pdat <- apply(out, 3, function(x) reshape2::melt(as.data.frame(x), id.vars = "gen"))
+      pdat <- data.table::rbindlist(pdat, idcol = "pop")
+      colnames(pdat) <- c("pop", "Generation", "var", "val")
+      pdat$pop <- as.factor(pdat$pop)
+      pdat <- na.omit(pdat)
+      print(ggplot2::ggplot(pdat, ggplot2::aes(Generation, val)) + ggplot2::geom_point(na.rm = T) +
+              ggh4x::facet_grid2(pop~var, scales = "free_y", independent = "y") +
+              ggplot2::theme_bw() +
+              ggplot2::scale_x_continuous(limits = c(1, gens), breaks = scales::pretty_breaks()) +
+              ggplot2::theme(strip.placement = "outside", axis.title.y = ggplot2::element_blank(),
+                             strip.background = ggplot2::element_blank(),
+                             strip.text = ggplot2::element_text(size = 11)))
     }
 
-
-    #add allele frequencies if requested
     if(print.all.freqs){
-      a.fqs[,i] <- rowSums(genotypes)/ncol(genotypes)
+      a.fqs[,i,] <- unlist(lapply(genotypes, function(z) rowSums(z)/ncol(z)))
     }
 
-
-    #===============figure out next generation===============
-    #what is the pop size after growth?
-    offn <- round(growth.function(out[i,1]))
-
-
-    #make a new x with the survivors
-    genotypes <- genotypes[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
-
-    #=============do random mating, adjust selection, get new phenotype scores, get ready for next gen====
-    genotypes <- rand.mating(x = genotypes, N.next = offn, meta = meta, rec.dist = rec.dist, chr.length, do.sexes)
-    # check that the pop didn't die due to every individual being the same sex (rand.mating returns NULL in this case.)
-    if(is.null(genotypes)){
-      break
+    #==========update selection optima===========
+    if(!fitnesses){
+      opt[j] <- selection.shift.function[[j]](opt[j], iv = sqrt(h.av[j]))
     }
-
-    #get phenotypic/genetic values
-    if(is.null(model)){
-      if(additive){
-        pa <- get.pheno.vals(genotypes, effect.sizes = meta$effect,
-                             h = h,
-                             hist.a.var = h.av,
-                             phased = T,
-                             fitnesses = fitnesses)
-      }
-      else{
-        pa <- get.pheno.vals(genotypes, effect.sizes = meta[,c("effect_0", "effect_1", "effect_2")],
-                             h = h,
-                             hist.a.var = h.av,
-                             phased = T,
-                             fitnesses = fitnesses)
-      }
-
-    }
-    else{
-      if(class(model) == "ranger"){
-        suppressWarnings(pa <- fetch_phenotypes_ranger(genotypes, model, h, h.av))
-      }
-    }
-
-    BVs <- pa$a
-    phenotypes <- pa$p
-
-
-    #adjust selection optima
-    if(!fitnesses){opt <- selection.shift.function(opt, iv = sqrt(h.av))}
-
-    gc()
   }
 
-  #prepare stuff to return
-  out[,"gen"] <- 1:nrow(out)
-  out <- out[-nrow(out),, drop = F]
-
-  if(print.all.freqs){
-    a.fqs <- cbind(meta, a.fqs, stringsAsFactors = F)
-    out <- list(summary = out, frequencies = a.fqs)
+  if(!print.all.freqs){
+    num <- c(NA, 0)
+    a.fqs <- array(num[1], c(max(unlist(lapply(genotypes, nrow))), 1, npops))
+    for(i in 1:npops){
+      if(!is.null(genotypes[[i]])){
+        a.fqs[,1,i] <- rowSums(genotypes[[i]])/ncol(genotypes[[i]])
+      }
+    }
   }
 
-  return(list(run_vars = out, genotypes = genotypes, phenotypes = phenotypes, BVs = BVs))
+  return(list(run_vars = out, genotypes = final_genotypes, phenotypes = final_phenotypes, BVs = final_BVs, a.fqs = a.fqs,
+              effects = final_effects, thinned_a.fqs = thinned_a.fqs, thinned_effects = thinned_effects,
+              meta = final_meta))
 }
 
 
