@@ -647,6 +647,17 @@ gs <- function(genotypes,
       }
     })
 
+    if(all(lapply(genotypes, is.null))){
+      warning("All populations went extinct prior to designated number of generations.\n")
+      res <- list(run_vars = out,
+                  effects = effects, thinned_a.fqs = thinned_a.fqs, thinned_effects = thinned_effects,
+                  meta = meta)
+      if(print.all.freqs){
+        res <- c(res, list(a.fqs = a.fqs))
+      }
+
+      return(res)
+    }
 
 
     #====mutation======
