@@ -95,6 +95,9 @@ gs <- function(genotypes,
                       selection.shift.function,
                       mutation,
                       pass_surv_genos = FALSE){
+    if(ncol(genotypes) == 0){
+      return(NA)
+    }
 
     #=========survival====
     if(length(unique(phenotypes)) == 1 & phenotypes[1] != 1 & stop_if_no_variance){stop("No genetic variance left.\n")}
@@ -316,8 +319,23 @@ gs <- function(genotypes,
     return(list(x = x.next, meta.next = meta.next, effects = effects))
   }
 
+  null_func <- function(x, func, ...){
+    if(is.null(x)){
+      return(NA)
+    }
+    return(func(x, ...))
+  }
+
   update_phenotypes <- function(genotypes, effects, h, h.av, fitnesses, model = NULL){
+    BVs <- phenotypes <- vector("list", length(genotypes))
+
     for(j in 1:length(genotypes)){
+      if(is.null(genotypes[[j]])){
+        BVs[j] <- list(NULL)
+        phenotypes[j] <- list(NULL)
+        next
+      }
+
       if(is.null(model)){
         if(additive){
           pa <- get.pheno.vals(genotypes[[j]], effect.sizes = effects[,j],
@@ -554,14 +572,32 @@ gs <- function(genotypes,
   #================loop through each additional gen, doing selection, survival, and fisher sampling of survivors====
 
   for(i in 2:(gens+1)){
+    genotypes <- lapply(genotypes, function(x, nrow){
+      if(is.null(x)){
+        x <- data.table::as.data.table(matrix(NA, nrow = nrow, ncol = 0))
+      }
+      return(x)
+    },
+    nrow = nrow(effects))
 
     if(thin_fixed){
       fixed <- lapply(genotypes, function(z) rowSums(z) == 0)
+      fixed <- lapply(fixed, function(z){
+        if(length(z) == 0){
+          return(rep(TRUE, nrow(effects)))
+        }
+        return(z)
+      })
       fixed <- matrix(unlist(fixed), ncol = length(genotypes))
       fixed <- which(rowSums(fixed) == ncol(fixed))
 
       if(length(fixed) > 0){
-        genotypes <- lapply(genotypes, function(z) z[-fixed,])
+        genotypes <- lapply(genotypes, function(z){
+          if(ncol(z) == 0){
+            return(z)
+          }
+          return(z[-fixed,])
+        })
         meta <- meta[-fixed,,drop=FALSE]
 
         # pull thinned loci out of a.fq
@@ -618,7 +654,6 @@ gs <- function(genotypes,
                                 )
       }
     }
-
     if(i == gens + 1 & sampling_point == "parents"){
       final_genotypes <- purrr::map(genotypes, "final_genotypes")
       final_meta <- purrr::map(genotypes, "final_meta")
@@ -756,11 +791,11 @@ gs <- function(genotypes,
 
     #========progress report==========
     out[i,1,] <- unlist(lapply(genotypes, function(x) sum(ncol(x)/2)))
-    out[i,2,] <- unlist(lapply(phenotypes, mean))
-    out[i,3,] <- unlist(lapply(BVs, mean))
+    out[i,2,] <- unlist(lapply(phenotypes, null_func, func = mean, na.rm = TRUE))
+    out[i,3,] <- unlist(lapply(BVs, null_func, func = mean, na.rm = TRUE))
     out[i,4,] <- opt
     out[i,5,] <- opt - out[i,3,]
-    out[i,6,] <- unlist(lapply(BVs, var))
+    out[i,6,] <- unlist(lapply(BVs, null_func, func = var, na.rm = TRUE))
     out[i,7,] <- t.opt
     out[i,8,] <- i - 1
 
@@ -790,7 +825,12 @@ gs <- function(genotypes,
     }
 
     if(print.all.freqs){
-      a.fqs[,i,] <- unlist(lapply(genotypes, function(z) rowSums(z)/ncol(z)))
+      a.fqs[,i,] <- unlist(lapply(genotypes, function(z){
+        if(is.null(z)){
+          return(rep(NA, nrow(effects)))
+        }
+        return(rowSums(z)/ncol(z))
+      }))
     }
 
     #==========update selection optima===========
