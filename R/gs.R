@@ -187,7 +187,6 @@ gs <- function(genotypes,
     }
 
     # finish making the info df
-    inds <- rep(1:sum(pops), nmut) # which inds each mutation is in
     mut_info <- dplyr::arrange(mut_info, inds, chrs, positions)
     mut_info_index <- unique(mut_info[,1:2])
     mut_info_index$row <- 1:nrow(mut_info_index)
@@ -224,7 +223,7 @@ gs <- function(genotypes,
       mut.eff <- mut.eff[-zeros,,drop=FALSE]
     }
 
-    # make the data
+    # make the data with mutations
     mut.x <- matrix(0, nrow(mut_info_index), sum(pops))
     mut.x[mut_info$row + ((mut_info$ind - 1) * nrow(mut.x))] <- 1
     mut.x <- as.data.table(mut.x)
@@ -233,8 +232,11 @@ gs <- function(genotypes,
     # determine if any new sites overlap the existing ones
     overlap_i_in_ref <- which(paste0(meta[,1], "_", meta[,2]) %in% paste0(mut_info$chrs, "_", mut_info$position))
     if(length(overlap_i_in_ref) > 0){
-      overlap_i_in_mut <- match(paste0(meta[overlap_i_in_ref,1], "_", meta[overlap_i_in_ref,2]),
-                                paste0(mut_info$chrs, "_", mut_info$position))
+      # overlap_i_in_mut <- match(paste0(meta[overlap_i_in_ref,1], "_", meta[overlap_i_in_ref,2]),
+      #                           paste0(mut_info$chrs, "_", mut_info$position))
+
+      overlap_i_in_mut <- which(paste0(mut_info$chrs, "_", mut_info$position) %in%
+                                  paste0(meta[overlap_i_in_ref,1], "_", meta[overlap_i_in_ref,2]))
 
       # flip any overlaps, then remove these from the data
       for(i in 1:npops){
@@ -244,7 +246,7 @@ gs <- function(genotypes,
         if(length(this_pops) == 0){next}
 
         # find the overlaps in this pop
-        t.overlaps <- mut_info[overlap_i_in_mut,][this_pops]
+        t.overlaps <- mut_info[overlap_i_in_mut,][this_pops,]
         t.overlaps$ind <- t.overlaps$ind - c(0, cumsum(pops))[i]
         t.overlap.cols <- t.overlaps$ind
 
@@ -281,8 +283,9 @@ gs <- function(genotypes,
       }
 
       mut.eff <- mut.eff[-unique(mut_info$row[overlap_i_in_mut]),]
-      mut_info_index <- mut_info_index[-which(mut_info_index$row %in% mut_info$row[overlap_i_in_mut]),]
-      mut.x <- mut.x[-overlap_i_in_mut,, drop = FALSE]
+      mut_drop <- which(mut_info_index$row %in% mut_info$row[overlap_i_in_mut])
+      mut.x <- mut.x[-mut_drop,, drop = FALSE]
+      mut_info_index <- mut_info_index[-mut_drop,]
     }
 
     # split into pops
@@ -647,7 +650,7 @@ gs <- function(genotypes,
       }
     })
 
-    if(all(lapply(genotypes, is.null))){
+    if(all(unlist(lapply(genotypes, is.null)))){
       warning("All populations went extinct prior to designated number of generations.\n")
       res <- list(run_vars = out,
                   effects = effects, thinned_a.fqs = thinned_a.fqs, thinned_effects = thinned_effects,
